@@ -16,22 +16,38 @@ from s3_uploader import S3Uploader
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 AP_NODE = "node2-5"
-RX_NODES = ["node1-1", "node1-20", "node20-1", "node19-19"]
-TX_TRAINING_NODES = ['node5-1', 'node7-10', 'node7-14', 'node2-19', 'node5-5', 'node19-1', 'node20-20', 'node1-10', 'node8-20', 'node11-17', 
-                     'node2-6', 'node1-12', 'node4-1', 'node3-13', 'node1-16', 'node8-8', 'node8-18', 'node1-19', 'node1-18', 'node11-7', 
-                     'node20-12', 'node4-10', 'node11-4', 'node8-3', 'node4-11', 'node3-18', 'node14-7', 'node10-17', 'node10-11']
-TX_TESTING_NODES = ['node12-20', 'node17-11', 'node20-19', 'node20-15', 'node14-10', 'node16-16', 'node15-1', 'node16-1', 'node1-2', 'node1-11', 'node2-1', 'node2-20'] 
+# RX_NODES = ["node1-1", "node1-20", "node20-1", "node19-19"]
+RX_NODES = ["node1-1", "node1-20", "node19-19"]
+# TX_TRAINING_NODES = ['node5-1', 'node7-10', 'node7-14', 'node2-19', 'node5-5', 'node19-1', 'node20-20', 'node1-10', 'node8-20', 'node11-17', 
+#                      'node2-6', 'node1-12', 'node4-1', 'node3-13', 'node1-16', 'node8-8', 'node8-18', 'node1-19', 'node1-18', 'node11-7', 
+#                      'node20-12', 'node4-10', 'node11-4', 'node8-3', 'node4-11', 'node3-18', 'node14-7', 'node10-17', 'node10-11']
+# TX_TESTING_NODES = ['node12-20', 'node17-11', 'node20-19', 'node20-15', 'node14-10', 'node16-16', 'node15-1', 'node16-1', 'node1-2', 'node1-11', 'node2-1', 'node2-20'] 
+
+TX_TRAINING_NODES = [
+    'node7-10', 'node7-14', 'node2-19', 'node20-20', 'node8-20', 'node11-17', 'node2-6', 'node20-6', 'node15-20', 'node17-10',
+    'node1-12', 'node4-1', 'node3-13', 'node1-16', 'node8-8', 'node8-18', 'node1-18', 'node11-7', 'node20-12', 'node19-2'
+    'node11-4', 'node3-18', 'node14-7', 'node10-17', 'node10-11', 'node6-15', 'node7-7', 'node8-13', 'node10-1', 'node20-10']
+
+# 'node19-1', 'node1-10'
+# node7-7, node20-6, node20-10 -- these nodes are present in the dataset but don't have any data in them
+
+TX_TESTING_NODES = [
+    'node12-20', 'node17-11', 'node20-19', 'node20-15', 'node14-10', 'node16-16', 'node15-1', 'node16-1', 'node1-2', 'node1-11', 
+    'node2-1', 'node2-20', 'node10-7', 'node10-10', 'node11-20', 'node11-10', 'node13-13', 'node11-14', 'node13-8', 'node13-18', 
+    'node13-20', 'node14-11', 'node14-14', 'node19-20']
+
+# Bad ones: node10-4, node12-1, node13-3, node15-15
 
 TX_INTERVAL = "0.01" # Interval (in seconds) between injected probe requests
 TX_SSID = "smazokha" # Name of the SSID which we'll use in the probe requests (irrelevant)
 TX_MAC = "11:22:33:44:55:66" # Spoofed MAC address we'll use in our probe requests
 TX_CHANNEL = 11 # Channel ID on which we'll be sending our probes [1 -- 13]
-RX_CAP_LEN_UDP = "10" # For how many seconds should we capture UDP traffic
+RX_CAP_LEN_UDP = "4" # For how many seconds should we capture UDP traffic
 RX_CAP_LEN_PROBES = "10" # For how many seconds should we capture Probe Request traffoc
 CONFIG_BATCH_SIZE = 15 # How many parallel config sessions should we run in parallel
 AWS_S3_BUCKET_NAME = 'mobintel-orbit-dataset'
 # EXPERIMENT_DIR = '/Users/stepanmazokha/Desktop/orbit_experiment/' # Root experiment dir on local device
-EXPERIMENT_DIR = '/home/smazokha2016/Desktop/orbit_experiment_jul_21/' # Root experiment dir on CA-AI server
+EXPERIMENT_DIR = '/home/smazokha2016/Desktop/orbit_experiment_aug_8/' # Root experiment dir on CA-AI server
 
 # Generates a 'virtual' MAC address (first 3 octets are the same, the remaining are randomized)
 def generate_virtual_mac():
@@ -278,7 +294,7 @@ def main():
             ap_node_id = input('AP node ID: ') # AP_NODE
             target_dir = rx_master.prepare_target_dir(EXPERIMENT_DIR, '')
             os.makedirs(target_dir, exist_ok=True)
-            run_capture_udp(tx_node_id, ap_node_id, RX_NODES, target_dir)
+            run_capture_udp(tx_node_id, ap_node_id, RX_NODES, target_dir, RX_CAP_LEN_UDP)
         elif instruction == 'run experiment probe':
             epochs = int(input('How many epochs? (int only please): '))
             cloud_sync = input('Should we record to AWS S3? [Y by default | n]') != 'n'

@@ -11,8 +11,8 @@ RX_CHANNEL_IDX = 11 # 1-based value, according to 802.11 standard
 RX_USRP_IP = "addr=192.168.10.2"
 RX_FREQ = OFDM_CENTER_FREQ[RX_CHANNEL_IDX - 1]
 RX_GAIN = "10" # Chx Gain Value, Absolute (dB), range (for SBX): 0 - 31.5 dB
-# RX_SAMP_RATE = "25e6" # Sampling rate, should be at least 20 Msps
-RX_SAMP_RATE = "20e6" # Sampling rate, should be at least 20 Msps
+RX_SAMP_RATE = "25e6" # Sampling rate, should be at least 20 Msps
+# RX_SAMP_RATE = "20e6" # Sampling rate, should be at least 20 Msps
 RX_SKIP = "0" # How many samples (N) do we skip, where N = RX_SKIP * RX_SAMP_RATE
 RX_CAP_LEN = "10" # For how long do we capture samples (in seconds)
 RX_LO_OFF = "0" # If the center freq is crowded, we can optionally tune it up (WiSig had it at 10 MHz)

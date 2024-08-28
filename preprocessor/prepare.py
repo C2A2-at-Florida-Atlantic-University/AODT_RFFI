@@ -22,14 +22,47 @@ MATLAB_OFDM_DECODER = ROOT_DIR + '/mobintel-rffi/preprocessor/frame_mac_detectio
 TEMP_IQ_DIRECTORY = ROOT_DIR + '/orbit_processor_temp/'
 NODE_MACS = 'experiment_device_macs.json'
 S3_BUCKET_NAME = "mobintel-orbit-dataset"
-S3_EXPERIMENT_NAME = "orbit_experiment_jul_19"
+S3_EXPERIMENT_NAME = "orbit_experiment_aug_8"
+# S3_EXPERIMENT_NAME = "orbit_experiment_jul_19"
 # S3_EXPERIMENT_NAME = "orbit_experiment_jul_21"
 S3_EPOCH_PREFIX = "epoch_"
 S3_TRAINING_PREFIX = "training_"
 RFFI_DATASET_TARGET_DIR = f'{ROOT_DIR}/{S3_BUCKET_NAME}_h5/'
-FRAME_COUNT = 200
+FRAME_COUNT = 100
 
-COMPLETED_SESSIONS = []
+COMPLETED_SESSIONS = [
+    'training_2024-08-08_18-37-33',
+    'epoch_2024-08-08_19-19-27',
+    'epoch_2024-08-08_19-59-37',
+    'epoch_2024-08-08_20-33-18',
+    'epoch_2024-08-08_21-04-40',
+    'epoch_2024-08-08_21-40-14',
+    'epoch_2024-08-08_22-15-27',
+    'epoch_2024-08-08_22-45-31',
+    'epoch_2024-08-08_23-15-19',
+    'epoch_2024-08-08_23-43-47',
+    'epoch_2024-08-09_00-15-50',
+    'epoch_2024-08-09_00-44-03',
+    'epoch_2024-08-09_01-12-19',
+    'epoch_2024-08-09_01-40-27',
+    'epoch_2024-08-09_02-08-14',
+    'epoch_2024-08-09_02-36-31',
+    'epoch_2024-08-09_03-05-59',
+    'epoch_2024-08-09_03-34-38',
+    'epoch_2024-08-09_04-02-08',
+    'epoch_2024-08-09_04-30-31',
+    'epoch_2024-08-09_04-59-00',
+    'epoch_2024-08-09_05-27-49',
+    'epoch_2024-08-09_05-56-24',
+    'epoch_2024-08-09_06-24-29',
+    'epoch_2024-08-09_06-52-36',
+    'epoch_2024-08-09_07-20-51',
+    'epoch_2024-08-09_07-49-48',
+    'epoch_2024-08-09_08-18-31',
+    'epoch_2024-08-09_08-47-08',
+    'epoch_2024-08-09_09-15-25',
+    'epoch_2024-08-09_14-11-49'
+]
 
 MATLAB_SESSION_NAMES = [
     'mobintel_session_1',
@@ -42,8 +75,6 @@ MATLAB_SESSION_NAMES = [
     'mobintel_session_8',
     'mobintel_session_9',
     'mobintel_session_10']
-
-# MATLAB_SESSION_NAMES = ['mobintel_session_1']
 
 MAX_THREADS = len(MATLAB_SESSION_NAMES)
 
@@ -312,7 +343,8 @@ def main():
     matlab_engine_queue = queue.Queue()
     for engine_name in MATLAB_SESSION_NAMES:
         print(f"Connecting to engine {engine_name}... ", end='')
-        matlab_engine = matlab.engine.connect_matlab(engine_name)
+        # matlab_engine = matlab.engine.connect_matlab(engine_name)
+        matlab_engine = matlab.engine.start_matlab("-nodisplay")
         matlab_engine.cd(MATLAB_OFDM_DECODER, nargout=0)
         matlab_engine_queue.put(matlab_engine)
         print("connected")
@@ -325,24 +357,5 @@ def main():
         else: 
             process_session(matlab_engine_queue, session_name, preamble_len, node_ids, node_macs)
 
-# def eval():
-#     # Check if a directory to store final dataset exists and create if not
-#     if not os.path.exists(RFFI_DATASET_TARGET_DIR):
-#         os.makedirs(RFFI_DATASET_TARGET_DIR)
-
-#     # Load a JSON file with device MAC addresses from S3 experiment folder
-#     node_macs_local_path = os.path.join(RFFI_DATASET_TARGET_DIR, NODE_MACS)
-#     download_file_with_progress(S3_BUCKET_NAME, f"{S3_EXPERIMENT_NAME}/{NODE_MACS}", node_macs_local_path)
-#     node_macs = read_json_file(node_macs_local_path)
-
-#     codepath = '/home/smazokha2016/Desktop/mobintel-rffi/preprocessor/frame_mac_detection'
-
-#     matlab_engine = matlab.engine.connect_matlab('temp_session')
-#     matlab_engine.cd(codepath, nargout=0)
-#     # matlab_engine.find_tx_frames(filepath, 'CBW20', 25e6, '00:60:b3:ac:a1:cb', 400)
-
-#     process_dat_file(matlab_engine, 'training_2024-07-20_00-50-38', 'tx{node_node1-10}_rx{node_node1-1+rxFreq_2462e6+rxGain_10+capLen_2+rxSampRate_25e6}.dat', node_macs, -1)
-
 if __name__ == "__main__":
     main()
-    # eval()
