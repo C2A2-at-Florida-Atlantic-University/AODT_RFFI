@@ -1,25 +1,77 @@
+import os
 import sys
 import traceback
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
-from DatasetAPI import DatasetAPI
-from ExtractorAPI import ExtractorAPI
-from Singleton import Singleton
+from dataset_api import DatasetAPI
+from extractor_api import ExtractorAPI
+from singleton import Singleton
+from dataset_preparation import awgn
 from scipy.spatial.distance import cdist
 from sklearn.preprocessing import MinMaxScaler
 
 class EvaluationAPI(metaclass=Singleton):
 
-    def __init__(self, rx_ids, models, data_config, aug_config, model_config, root_dir, matlab_src_dir, matlab_session_id, aug_on):
+    def __init__(self, rx_ids, data_config, aug_config, model_config, root_dir, matlab_src_dir, matlab_session_id, aug_on):
         self.rx_ids = rx_ids
-        self.models = models
         self.aug_on = aug_on
         self.data_config = data_config
         self.aug_config = aug_config
         self.model_config = model_config
         self.dataset_api = DatasetAPI(root_dir, matlab_src_dir, matlab_session_id, aug_on)
         self.extractor_api = ExtractorAPI()
+
+    def evaluate_preamble_offset(self, rx_id, frame_start_train, offset_range, 
+                                 epoch_idx_enroll=0, epoch_idx_identify=1, 
+                                 frame_count_enroll=100, frame_count_identify=100, 
+                                 enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 use_pretrained = False, aug_on = False, apply_noise=False, fig_name="Preamble Offset Evaluation"):
+        print("Load the training dataset")
+        dataset_train_path, dataset_epoch_paths, model_path, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+        if aug_on: data, label, rssi = self.dataset_api.load_augmented_dataset(dataset_train_path, samp_rate, self.aug_config, shuffle=True)
+        else: data, label, rssi = self.dataset_api.load_raw_dataset(dataset_train_path, shuffle=True)
+        data, label, rssi = self.dataset_api.filter_dataset(data, label, rssi, node_ids_train, np.arange(0, self.data_config['frame_count_train']))
+        if apply_noise: data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
+        data_train = data[:, frame_start_train:frame_start_train+self.data_config['samples_count']]
+        if use_pretrained: feature_extractor = self.extractor_api.load(os.path.join(model_path, f"extractor_{rx_id}.keras"))
+        else: feature_extractor, _ = self.extractor_api.train(data_train, label, node_ids_train, self.model_config, save_path=None)
+
+        results = {}
+        for offset in offset_range:
+            print(f"Processing offset {offset}")
+
+            # Load data (two epochs: one to enroll devices, another to identify devices)
+            data_enroll, labels_enroll, rssi_enroll = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epoch_idx_enroll], shuffle=True)
+            data_identify, labels_identify, rssi_identify = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epoch_idx_identify], shuffle=True)
+
+            data_enroll, labels_enroll, _ = self.dataset_api.filter_dataset(data_enroll, labels_enroll, rssi_enroll, dev_range=enroll_device_idx, pkt_range=np.arange(frame_count_enroll))
+            data_identify, labels_identify, _ = self.dataset_api.filter_dataset(data_identify, labels_identify, rssi_identify, dev_range=identify_device_idx, pkt_range=np.arange(frame_count_identify))
+
+            data_enroll = data_enroll[:, offset:self.data_config['samples_count']+offset]
+            data_identify = data_identify[:, offset:self.data_config['samples_count']+offset]
+
+            # Evaluate the model using the two epochs
+            accuracy = self.extractor_api.evaluate(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config)
+
+            print(f"Accuracy: {round(accuracy*100, 2)}%")
+
+            results[offset] = accuracy
+
+        plt.figure(figsize=(10, 8), dpi=80)
+        plt.plot(results.keys(), results.values(), '-')
+        plt.xlabel("Sequence offset, IQ samples")
+        plt.ylabel("Model evaluation accuracy")
+        plt.ylim(0, 1)
+        plt.title(fig_name)
+        plt.show()
+
+
+
+
+
+
 
     def generate_grid_node_ids(self):
         ids = {}

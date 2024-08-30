@@ -1,10 +1,14 @@
+import numpy as np
 from sklearn.model_selection import train_test_split
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras.optimizers import RMSprop
 from dataset_preparation import ChannelIndSpectrogram
 from deep_learning_models import NPairNet, identity_loss
-from Singleton import Singleton
+from singleton import Singleton
 from keras.models import load_model
+from sklearn.metrics import roc_curve, auc , confusion_matrix, accuracy_score
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split
 
 class ExtractorAPI(metaclass=Singleton):
 
@@ -12,7 +16,6 @@ class ExtractorAPI(metaclass=Singleton):
         batch_size = model_config['batch_size']
         patience = model_config['patience']
         row = model_config['row']
-        col = model_config['col']
         loss_type = model_config['loss_type']
         alpha = model_config['alpha']
         num_neg = model_config['loss_num_neg']
@@ -21,7 +24,7 @@ class ExtractorAPI(metaclass=Singleton):
         ChannelIndSpectrogramObj = ChannelIndSpectrogram()
         
         # Convert time-domain IQ samples to channel-independent spectrograms.
-        data = ChannelIndSpectrogramObj.channel_ind_spectrogram(data, row, col)
+        data = ChannelIndSpectrogramObj.channel_ind_spectrogram(data, row)
         
         NPairNetObj = NPairNet()
         
@@ -68,10 +71,27 @@ class ExtractorAPI(metaclass=Singleton):
 
     def run(self, model, data, model_config):
         # Prepare input data for the model (convert to spectrogram images)
-        data_freq = ChannelIndSpectrogram().channel_ind_spectrogram(data, model_config['row'], model_config['col'])
+        data_freq = ChannelIndSpectrogram().channel_ind_spectrogram(data, model_config['row'])
 
         # Extract fingerprints from the trained model
         return model.predict(data_freq)
+
+    def evaluate(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config):
+        # Produce fingerprints for the epoch #1
+        fps_epoch_1 = self.run(model, data_epoch_1, model_config)
+
+        # Perform the enrollment: fit a KNN classifier based on produced fingerprints
+        classifier = KNeighborsClassifier(n_neighbors=10, metric='euclidean')
+        classifier.fit(fps_epoch_1, np.ravel(labels_epoch_1))
+
+        # Produce fingerprints for the epoch #2
+        fps_epoch_2 = self.run(model, data_epoch_2, model_config)
+        labels_epoch_2_predicted = classifier.predict(fps_epoch_2)
+
+        # Get the accuracy
+        accuracy = accuracy_score(labels_epoch_2, labels_epoch_2_predicted)
+
+        return accuracy
 
 # Example usage
 if __name__ == "__main__":

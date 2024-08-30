@@ -3,8 +3,6 @@ import h5py
 from numpy import sum,sqrt
 from numpy.random import standard_normal, uniform
 from scipy import signal
-import seaborn as sea
-import matplotlib.pyplot as plt
 
 def awgn(data, snr_range):
     
@@ -148,7 +146,7 @@ class ChannelIndSpectrogram():
                   
         return chan_ind_spec_amp
     
-    def channel_ind_spectrogram(self, data, row=50, col=14):
+    def channel_ind_spectrogram(self, data, row):
         '''
         channel_ind_spectrogram converts IQ samples to channel independent 
         spectrograms.
@@ -161,19 +159,12 @@ class ChannelIndSpectrogram():
         '''
         # Normalize the IQ samples.
         data = self._normalization(data)
-        
-        # Calculate the size of channel independent spectrograms.
-        num_sample = data.shape[0]
-        num_row = row # int(256*0.4) # nfft (how many subcarriers)
-        # num_column = 38 #int(np.floor((8192-256)/128 + 1) - 1) # of windows - 1
-        num_column = col
-        data_channel_ind_spec = np.zeros([num_sample, num_row, num_column, 1])
+
+        col = int(np.floor((data.shape[1]-row)/(row/2) + 1) - 1)
         
         # Convert each packet (IQ samples) to a channel independent spectrogram.
-        for i in range(num_sample):
-            chan_ind_spec_amp = self._gen_single_channel_ind_spectrogram(data[i], win_len=50, overlap=25)
-            # chan_ind_spec_amp = self._spec_crop(chan_ind_spec_amp)
-            data_channel_ind_spec[i,:,:,0] = chan_ind_spec_amp
-            
+        data_channel_ind_spec = np.zeros([data.shape[0], row, col, 1])
+        for i in np.arange(data.shape[0]):
+            data_channel_ind_spec[i,:,:,0] = self._gen_single_channel_ind_spectrogram(data[i], win_len=50, overlap=25)
         return data_channel_ind_spec
 

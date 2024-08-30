@@ -8,6 +8,6 @@ For detailed description of how this code works, please refer to our paper.
 
 You have two choices of how to use this repository: 
 
-1. Run experiments to produce figures we demonstrate in our paper;
+1. Explore our fingerprinting demo workflow: [Fingerprinting Workflow](fp_demo.ipynb)
 
-2. Run production-like fingerprinting notebook, which will demonstrate how we can use this method to identify devices.
+2. Reproduce figures from our paper: [Evaluation Workflow](evaluation_demo.ipynb)

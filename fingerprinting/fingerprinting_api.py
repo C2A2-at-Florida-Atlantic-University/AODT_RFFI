@@ -8,10 +8,9 @@ import seaborn as sns
 from datetime import datetime
 from scipy.spatial import distance
 from dataset_preparation import awgn
-
-from Singleton import Singleton
-from DatasetAPI import DatasetAPI
-from ExtractorAPI import ExtractorAPI
+from singleton import Singleton
+from dataset_api import DatasetAPI
+from extractor_api import ExtractorAPI
 
 class FingerprintingAPI(metaclass=Singleton):
 
@@ -103,7 +102,7 @@ class FingerprintingAPI(metaclass=Singleton):
         plt.tight_layout()
         plt.show()
 
-    def train_models(self):
+    def train_models(self, apply_noise=False):
         train_histories = {}
 
         for rx_id in self.rx_ids:
@@ -122,7 +121,8 @@ class FingerprintingAPI(metaclass=Singleton):
             data = data[:, 0:self.data_config['samples_count']]
 
             # Add AWGN
-            # data = awgn(data, np.arange(aug_config['awgn'][0][0], aug_config['awgn'][0][1]))
+            if apply_noise:
+                data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
 
             # Train the model
             model_save_path = os.path.join(model_path, f"extractor_{rx_id}.keras")
@@ -174,7 +174,7 @@ class FingerprintingAPI(metaclass=Singleton):
 
         return known_device_id
 
-    def new_signal(self, frames, new_device_threshold):
+    def new_signal(self, frames, new_device_threshold, apply_noise=False):
         # 1. Initializ a list of device candidates
         device_candidates = {}
         rx_rssis = {}
@@ -194,7 +194,8 @@ class FingerprintingAPI(metaclass=Singleton):
                 iq = frame['iq'][0:self.data_config['samples_count']]
 
                 # 2. Optionally, add awgn
-                # iq = awgn(iq, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
+                if apply_noise:
+                    iq = awgn(np.array([iq]), np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
 
                 # 3. Save frame RSSI value (without transforming for now, to keep its absolute value)
                 rssis[i] = frame['rssi']

@@ -2,7 +2,7 @@ import os
 import numpy as np
 import h5py
 import matlab.engine
-from Singleton import Singleton
+from singleton import Singleton
 
 class DatasetAPI(metaclass=Singleton):
 
