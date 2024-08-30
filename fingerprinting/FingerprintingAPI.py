@@ -41,7 +41,7 @@ class FingerprintingAPI(metaclass=Singleton):
         device_info = {}
 
         for rx_id, collection_name in self.db_collections.items():
-            collection = self.db_client.get_collection(collection_name)
+            collection = self.db_client.get_or_create_collection(collection_name)
             
             # Get all entries from the collection, including embeddings
             results = collection.get(ids=[], include=["metadatas", "embeddings"])
@@ -68,13 +68,15 @@ class FingerprintingAPI(metaclass=Singleton):
 
         print(f"Total number of unique devices: {len(all_devices)}\n")
         print("Device Statistics:")
-        for device_id, info in device_info.items():
-            print(f"Device ID: {device_id} (added: {info['date_added']}, last updated: {info['date_updated']})")
+        if len(device_info) == 0:
+            print("No devices found.")
+        else:
+            for device_id, info in device_info.items():
+                print(f"Device ID: {device_id} (added: {info['date_added']}, last updated: {info['date_updated']})")
 
         if render_confusion_matrices:
             for rx_id in self.rx_ids:
                 self._render_confusion_matrix(rx_id, device_info)
-
 
         return device_info
     

@@ -19,9 +19,9 @@ class DatasetAPI(metaclass=Singleton):
     def __init__(self, root_dir, matlab_src_dir, matlab_session_id, aug_on=False):
         self.root_dir = root_dir
         self.dataset_v1_path = os.path.join(self.root_dir, 'orbit_dataset_v1')
-        self.dataset_v2_path = os.path.join(self.root_dir, 'orbit_dataset_v2_jul19_full')
+        self.dataset_v2_path = os.path.join(self.root_dir, 'orbit_dataset_v2_jul19')
         self.dataset_v3_path = os.path.join(self.root_dir, 'orbit_dataset_v2_jul21')
-        self.dataset_v4_path = os.path.join(self.root_dir, 'mobintel-orbit-dataset_h5')
+        self.dataset_v4_path = os.path.join(self.root_dir, 'orbit_dataset_v3_aug8')
 
         if aug_on:
             mateng = matlab.engine.connect_matlab(matlab_session_id)
