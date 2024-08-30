@@ -53,7 +53,7 @@ class EvaluationAPI(metaclass=Singleton):
             data_identify = data_identify[:, offset:self.data_config['samples_count']+offset]
 
             # Evaluate the model using the two epochs
-            accuracy = self.extractor_api.evaluate(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config)
+            accuracy = self.extractor_api.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config)
 
             print(f"Accuracy: {round(accuracy*100, 2)}%")
 
@@ -67,11 +67,56 @@ class EvaluationAPI(metaclass=Singleton):
         plt.title(fig_name)
         plt.show()
 
+    def evaluate_loss_function(self, rx_id, loss_functions = ['triplet_loss', 'quadruplet_loss'],
+                                 epoch_idx_enroll=0, epoch_idx_identify=1, 
+                                 frame_count_enroll=100, frame_count_identify=100, 
+                                 enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 aug_on = False, apply_noise=False, render_confusion_matrix = False):
 
+        print("Load the training dataset")
+        dataset_train_path, dataset_epoch_paths, _, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+        if aug_on: data, label, rssi = self.dataset_api.load_augmented_dataset(dataset_train_path, samp_rate, self.aug_config, shuffle=True)
+        else: data, label, rssi = self.dataset_api.load_raw_dataset(dataset_train_path, shuffle=True)
+        data, label, rssi = self.dataset_api.filter_dataset(data, label, rssi, node_ids_train, np.arange(0, self.data_config['frame_count_train']))
+        if apply_noise: data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
+        data_train = data[:, 0:0+self.data_config['samples_count']]
+    
+        accuracies = {}
+        for loss_function in loss_functions:
+            print(f"Evaluating for {loss_function}")
 
+            custom_model_config = self.model_config.copy()
+            if loss_function == 'triplet_loss':
+                custom_model_config['loss_type'] = 'triplet_loss'
+                custom_model_config['loss_num_neg'] = 1
+            elif loss_function == 'quadruplet_loss':
+                custom_model_config['loss_type'] = 'quadruplet_loss'
+                custom_model_config['loss_num_neg'] = 2
+            else:
+                print("Unknown loss function.")
+                return {}
 
+            feature_extractor, _ = self.extractor_api.train(data_train, label, node_ids_train, custom_model_config, save_path=None)
 
+            # Load data (two epochs: one to enroll devices, another to identify devices)
+            data_enroll, labels_enroll, rssi_enroll = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epoch_idx_enroll], shuffle=True)
+            data_identify, labels_identify, rssi_identify = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epoch_idx_identify], shuffle=True)
 
+            data_enroll, labels_enroll, _ = self.dataset_api.filter_dataset(data_enroll, labels_enroll, rssi_enroll, dev_range=enroll_device_idx, pkt_range=np.arange(frame_count_enroll))
+            data_identify, labels_identify, _ = self.dataset_api.filter_dataset(data_identify, labels_identify, rssi_identify, dev_range=identify_device_idx, pkt_range=np.arange(frame_count_identify))
+
+            data_enroll = data_enroll[:, 0:self.data_config['samples_count']]
+            data_identify = data_identify[:, 0:self.data_config['samples_count']]
+
+            # Evaluate the model using the two epochs
+            accuracy = self.extractor_api.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, render_confusion_matrix)
+
+            print(f"Accuracy: {round(accuracy*100, 2)}%")
+
+            accuracies[loss_function] = accuracy
+
+        return accuracies
 
     def generate_grid_node_ids(self):
         ids = {}
@@ -114,7 +159,7 @@ class EvaluationAPI(metaclass=Singleton):
         ax.xaxis.set_label_position('top')
         plt.show()
 
-    def _evaluate_fingerprint_similarity_all(self, dev_range, fingerprints_all, rssis_all, ref_device_idx, ref_epoch_idx, epoch_count, show_heatmap = False):
+    def _evaluate_fingerprint_similarity(self, dev_range, fingerprints_all, rssis_all, ref_device_idx, ref_epoch_idx, epoch_count, show_heatmap = False):
         # Extract reference FPs for each RX device
         ref_fps = []
         for rx_i in np.arange(len(fingerprints_all)):
@@ -167,51 +212,9 @@ class EvaluationAPI(metaclass=Singleton):
 
         return avg_distances, device_distances[0], device_distances[1]
             
-    def _evaluate_fingerprint_similarity(self, dev_range, fingerprints, ref_device_idx, ref_epoch_idx, show_heatmap = False):
-        N, M, K, D = fingerprints.shape
-
-        # Extract reference fingerprints at device_idx and epoch_idx
-        reference_fingerprints = fingerprints[ref_device_idx, ref_epoch_idx, :, :]
-
-        # Initialize a matrix to store average distances with respect to reference fingerprints
-        avg_distances = np.zeros((N, M))
-
-        # Compute average Euclidean distance with respect to reference fingerprints for each device and epoch
-        for i in range(N):
-            for j in range(M):
-                # Extract the K fingerprints for device i at epoch j
-                data = fingerprints[i, j, :, :]
-                # Compute the Euclidean distances between reference fingerprints and current fingerprints
-                distances = cdist(reference_fingerprints, data, 'euclidean')
-                # Average the distances
-                avg_distance = np.mean(distances)
-                avg_distances[i, j] = avg_distance
-
-        device_distances = np.mean(avg_distances, axis=1)
-
-        if show_heatmap:
-            # Plot the heatmaps side by side
-            _, axes = plt.subplots(1, 2, figsize=(20, 8))
-
-            # Plot the heatmap
-            sns.heatmap(avg_distances, annot=True, cmap="YlGnBu", cbar_kws={'label': 'Average Euclidean Distance with Respect to Reference'}, yticklabels=dev_range, ax=axes[0])
-            axes[0].set_title(f'Average Euclidean Distance of Fingerprints Across Devices and Epochs\n(Reference: device={dev_range[ref_device_idx]}, epoch={ref_epoch_idx})')
-            axes[0].set_xlabel('Epoch')
-            axes[0].set_ylabel('Device')
-
-            # Plot the bar chart
-            axes[1].bar(np.arange(avg_distances.shape[0]), device_distances)
-            axes[1].set_title(f"Device fingerprint comparison\n(Reference: device={dev_range[ref_device_idx]}, epoch={ref_epoch_idx+1})")
-            axes[1].set_xlabel('Device')
-            axes[1].set_ylabel('Average Distance')
-
-        device_distances.sort()
-
-        return avg_distances, device_distances[0], device_distances[1]
-
-    def _produce_fingerprints(self, rx_name, node_ids_epoch, epochs_override):
+    def _produce_fingerprints(self, models, rx_name, node_ids_epoch, epochs_override):
         # Retrieve the relevant model
-        feature_extractor = self.models[rx_name]
+        feature_extractor = models[rx_name]
 
         # Retrieve information about the dataset: paths to dataset files, node IDs, sampling rate
         _, dataset_epoch_paths, _, _, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_name, epochs_override)
@@ -280,29 +283,7 @@ class EvaluationAPI(metaclass=Singleton):
         # plt.legend()
         plt.yticks(ticks=y_ticks_vals, labels=y_ticks_labels)
 
-    def run_fingerprinting_single(self, rx_name, node_ids_epoch, epochs_override, show_fp_heatmaps):
-        # Produce fingerprints
-        samp_rate, fingerprints, _ = self._produce_fingerprints(rx_name, node_ids_epoch, epochs_override)
-
-        # Evaluate similarity of fingerprints
-        fp_maps = np.zeros((len(node_ids_epoch), len(node_ids_epoch), fingerprints.shape[1]))
-        fp_distances = np.zeros((len(node_ids_epoch), 2))
-        
-        for device_idx in np.arange(len(node_ids_epoch)):
-            fp_dist_map, top1_dist, top2_dist = self._evaluate_fingerprint_similarity(node_ids_epoch, fingerprints, device_idx, ref_epoch_idx=0, show_heatmap=show_fp_heatmaps)
-            fp_distances[device_idx, 0] = top1_dist
-            fp_distances[device_idx, 1] = top2_dist
-
-            fp_maps[device_idx, :, :] = fp_dist_map
-
-        self._generate_figure_temporal_stability(fp_maps, node_ids_epoch)
-
-        # Prepare title for the plot
-        fp_discrimination_figure_title = f"Dataset: {self.data_config['dataset_name']}, RX: {rx_name}, Frames: [{self.data_config['frame_count_train']}/{self.data_config['frame_count_epoch']}], Samples: [{self.data_config['samples_count']} ({int(samp_rate/1e6)} MHz)], Augmentation: {self.aug_on}, Alpha: {self.model_config['alpha']}"
-
-        return fp_distances, fp_discrimination_figure_title
-
-    def run_fingerprinting_all(self, rx_nodes, node_ids_epoch, epochs_override, show_fp_heatmaps):
+    def evaluate_temporal_stability(self, models, rx_nodes, node_ids_epoch, epochs_override, show_fp_heatmaps):
         # Produce fingerprints for all receivers, using corresponding models
         min_epoch_count = sys.maxsize
         fingerprints_all = []
@@ -310,7 +291,7 @@ class EvaluationAPI(metaclass=Singleton):
         for i, rx_node in enumerate(rx_nodes):
             print(f"Generating eval finerprints for {rx_node}...")
             # Samp rate is always the same, so we'll just use the last one
-            samp_rate, fingerprints, rssis = self._produce_fingerprints(rx_node, node_ids_epoch, epochs_override)
+            samp_rate, fingerprints, rssis = self._produce_fingerprints(models, rx_node, node_ids_epoch, epochs_override)
             fingerprints_all.append(fingerprints)
             rssis_all.append(rssis)
 
@@ -320,7 +301,7 @@ class EvaluationAPI(metaclass=Singleton):
         fp_maps = np.zeros((len(node_ids_epoch), len(node_ids_epoch), min_epoch_count))
         fp_distances = np.zeros((len(node_ids_epoch), 2))
         for device_idx in np.arange(len(node_ids_epoch)):
-            fp_dist_map, top1_dist, top2_dist = self._evaluate_fingerprint_similarity_all(node_ids_epoch, fingerprints_all, rssis_all, device_idx, ref_epoch_idx=0, epoch_count=min_epoch_count, show_heatmap = show_fp_heatmaps)
+            fp_dist_map, top1_dist, top2_dist = self._evaluate_fingerprint_similarity(node_ids_epoch, fingerprints_all, rssis_all, device_idx, ref_epoch_idx=0, epoch_count=min_epoch_count, show_heatmap = show_fp_heatmaps)
             fp_distances[device_idx, 0] = top1_dist
             fp_distances[device_idx, 1] = top2_dist
 
@@ -329,9 +310,23 @@ class EvaluationAPI(metaclass=Singleton):
         self._generate_figure_temporal_stability(fp_maps, node_ids_epoch)
 
         # Prepare title for the plot (all settings are taken from the last device's config for now, since they're all almost the same)
-        fp_discrimination_figure_title = f"Dataset: {self.data_config['dataset_name']}, RX: ALL, Frames: [{self.data_config['frame_count_train']}/{self.data_config['frame_count_epoch']}], Samples: [{self.data_config['samples_count']} ({int(samp_rate/1e6)} MHz)], Augmentation: {self.aug_on}, Alpha: {self.model_config['alpha']}"
+        plot_title = f"Dataset: {self.data_config['dataset_name']}, RX: ALL, Frames: [{self.data_config['frame_count_train']}/{self.data_config['frame_count_epoch']}], Samples: [{self.data_config['samples_count']} ({int(samp_rate/1e6)} MHz)], Augmentation: {self.aug_on}, Alpha: {self.model_config['alpha']}"
 
-        return fp_distances, fp_discrimination_figure_title
+        lower_line_max = max(fp_distances[:, 0])
+        higher_line_min = min(fp_distances[:, 1])
+
+        fp_threshold = (higher_line_min - lower_line_max) / 2 + lower_line_max
+
+        # Create a figure with two subplots side by side
+        plt.figure(figsize=(20, 6), dpi=80)
+        plt.plot(fp_distances[:, 0], color='blue', label="Top 1st Fingerprint Similarity")
+        plt.plot(fp_distances[:, 1], color='red', label="Top 2nd Fingerprint Similarity")
+        plt.plot([0, len(fp_distances)-1], [fp_threshold, fp_threshold], label="New Device Detection Threshold", color="black", linestyle="--")
+        plt.ylim(0, 0.8)
+        plt.title(plot_title)
+        plt.show()
+
+        return fp_distances
 
 if __name__ == "__main__":
     print("Please refer to the primary workbook or the README for tutorial on how to use this class.")

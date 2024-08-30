@@ -78,7 +78,7 @@ class FingerprintingAPI(metaclass=Singleton):
                 self._render_confusion_matrix(rx_id, device_info)
 
         return device_info
-    
+    f
     def _render_confusion_matrix(self, rx_id, device_info):
         # 1. Extract embeddings & device IDs for the confusion matrix
         device_ids = list(device_info.keys())

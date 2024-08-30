@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.model_selection import train_test_split
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras.optimizers import RMSprop
@@ -76,7 +78,7 @@ class ExtractorAPI(metaclass=Singleton):
         # Extract fingerprints from the trained model
         return model.predict(data_freq)
 
-    def evaluate(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config):
+    def evaluate_closed_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, render_confusion_matrix=True):
         # Produce fingerprints for the epoch #1
         fps_epoch_1 = self.run(model, data_epoch_1, model_config)
 
@@ -90,8 +92,29 @@ class ExtractorAPI(metaclass=Singleton):
 
         # Get the accuracy
         accuracy = accuracy_score(labels_epoch_2, labels_epoch_2_predicted)
+        
+        if render_confusion_matrix:
+            conf_matrix = confusion_matrix(labels_epoch_2, labels_epoch_2_predicted)
+            plt.figure(figsize=(12, 10), dpi=60)
+            # TODO: sns.heatmap(conf_matrix, annot=True, cmap='YlGnBu', xticklabels=device_ids, yticklabels=device_ids)
+            sns.heatmap(conf_matrix, annot=True, cmap='YlGnBu')
+            
+            plt.title(f'Device Confusion Matrix (Euclidean Distance)')
+            plt.xlabel('Device ID')
+            plt.ylabel('Device ID')
+            plt.tight_layout()
+            plt.show()
 
         return accuracy
+
+    def evaluate_closed_set_custom_multirx(self, models, rx_ids, data_epoch_1_multirx, labels_epoch_1, data_epoch_2_multirx, labels_epoch_2, rssi_epoch_2_multirx, model_config, render_confusion_matrix=True):
+        # Produce fingerprints for the epoch #1
+        fps_epoch_1 = self.run(model, data_epoch_1, model_config)
+
+        # Produce fingerprints for the epoch #2
+        fps_epoch_2 = self.run(model, data_epoch_2, model_config)
+
+        
 
 # Example usage
 if __name__ == "__main__":
