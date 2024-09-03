@@ -4,6 +4,7 @@ import traceback
 import seaborn as sns
 import numpy as np
 import matplotlib.pyplot as plt
+import utils
 from dataset_api import DatasetAPI
 from extractor_api import ExtractorAPI
 from fingerprinting_api import FingerprintingAPI
@@ -39,7 +40,7 @@ class EvaluationAPI(metaclass=Singleton):
                                  frame_count_enroll=100, frame_count_identify=100, 
                                  enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
                                  identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
-                                 use_pretrained = False, aug_on = False, apply_noise=False, fig_name="Preamble Offset Evaluation"):
+                                 use_pretrained = False, aug_on = False, apply_noise=False, fig_name = None, fig_path=None):
         print("Load the training dataset")
         dataset_train_path, dataset_epoch_paths, model_path, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
         if aug_on: data, label, rssi = self.dataset_api.load_augmented_dataset(dataset_train_path, samp_rate, self.aug_config, shuffle=True)
@@ -65,26 +66,32 @@ class EvaluationAPI(metaclass=Singleton):
             data_identify = data_identify[:, offset:self.data_config['samples_count']+offset]
 
             # Evaluate the model using the two epochs
-            accuracy = self.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, render_confusion_matrix=False)
+            accuracy = self.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config)
 
             print(f"Accuracy: {round(accuracy*100, 2)}%")
 
             results[offset] = accuracy
 
-        plt.figure(figsize=(10, 8), dpi=80)
-        plt.plot(results.keys(), results.values(), '-')
+        utils.apply_ieee_style()
+        plt.plot(results.keys(), results.values(), '-', label = '')
         plt.xlabel("Sequence offset, IQ samples")
         plt.ylabel("Model evaluation accuracy")
         plt.ylim(0, 1)
-        plt.title(fig_name)
+        plt.grid(True, linestyle=':', alpha=0.5)
+        plt.legend()
+        # plt.title(fig_name)
+        plt.tight_layout()
+        if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
         plt.show()
+
+        return results
 
     def evaluate_loss_function(self, rx_id, loss_functions = ['triplet_loss', 'quadruplet_loss'],
                                  epoch_idx_enroll=0, epoch_idx_identify=1, 
                                  frame_count_enroll=100, frame_count_identify=100, 
                                  enroll_device_idx = [39, 239, 269, 280, 300],
                                  identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
-                                 aug_on = False, apply_noise=False, render_confusion_matrix = False, render_roc_curve = False):
+                                 aug_on = False, apply_noise=False, fig_path=None):
 
         print("Load the training dataset")
         dataset_train_path, dataset_epoch_paths, _, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
@@ -120,26 +127,17 @@ class EvaluationAPI(metaclass=Singleton):
             data_enroll = data_enroll[:, 0:self.data_config['samples_count']]
             data_identify = data_identify[:, 0:self.data_config['samples_count']]
 
+            if fig_path: full_path = os.path.join(fig_path, f'{loss_function}.eps')
+
             # Evaluate the model using the two epochs (based on the device composition, perform either closed set or open set evaluation)
             if set(enroll_device_idx) == set(identify_device_idx):
-                accuracy = self.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, render_confusion_matrix)
+                accuracy = self.evaluate_closed_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, full_path)
                 print(f"Accuracy: {round(accuracy*100, 2)}%")
             else: 
-                self.evaluate_open_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, render_roc_curve)
-
-    def generate_grid_node_ids(self):
-        ids = {}
-        coordinates = {}
-        node_i = 0
-        for i in np.arange(1, 21):
-            for j in np.arange(1, 21):
-                ids[str(i) + "-" + str(j)] = node_i
-                node_i = node_i + 1
-                coordinates[node_i] = (i, j)
-        return ids, coordinates
+                self.evaluate_open_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, full_path)
 
     def render_orbit_grid(self, tx_node_ids, rx_node_ids, tx_node_id_curr):
-        _, node_coordinates = self._generate_grid_node_ids()
+        _, node_coordinates = utils.generate_grid_node_ids()
 
         tx_node_coordinates = [node_coordinates[item] for item in tx_node_ids]
         rx_node_coordinates = [node_coordinates[item] for item in rx_node_ids]
@@ -168,7 +166,7 @@ class EvaluationAPI(metaclass=Singleton):
         ax.xaxis.set_label_position('top')
         plt.show()
 
-    def _evaluate_fingerprint_similarity(self, dev_range, fingerprints_all, rssis_all, ref_device_idx, ref_epoch_idx, epoch_count, show_heatmap = False):
+    def _evaluate_fingerprint_similarity(self, dev_range, fingerprints_all, rssis_all, ref_device_idx, ref_epoch_idx, epoch_count, fig_full_path):
         # Extract reference FPs for each RX device
         ref_fps = []
         for rx_i in np.arange(len(fingerprints_all)):
@@ -201,7 +199,9 @@ class EvaluationAPI(metaclass=Singleton):
 
         device_distances = np.mean(avg_distances, axis=1)
 
-        if show_heatmap:
+        if fig_full_path:
+            utils.apply_ieee_style()
+
             # Plot the heatmaps side by side
             _, axes = plt.subplots(1, 2, figsize=(20, 8))
 
@@ -216,6 +216,11 @@ class EvaluationAPI(metaclass=Singleton):
             axes[1].set_title(f"Device fingerprint comparison\n(Reference: device={dev_range[ref_device_idx]}, epoch={ref_epoch_idx+1})")
             axes[1].set_xlabel('Device')
             axes[1].set_ylabel('Average Distance')
+            
+            if fig_full_path: plt.savefig(fig_full_path, format='eps', bbox_inches='tight', pad_inches=0.1)
+
+            plt.show()
+            
 
         device_distances.sort()
 
@@ -228,11 +233,15 @@ class EvaluationAPI(metaclass=Singleton):
         # Retrieve information about the dataset: paths to dataset files, node IDs, sampling rate
         _, dataset_epoch_paths, _, _, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_name, epochs_override)
 
-        fingerprints = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths), self.data_config['frame_count_epoch'], self.model_config['fp_len']))
-        rssis = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths), self.data_config['frame_count_epoch']))
+        fingerprints = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths)-1, self.data_config['frame_count_epoch'], self.model_config['fp_len']))
+        rssis = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths)-1, self.data_config['frame_count_epoch']))
 
         # Extract fingerprint for every epoch
+        epoch_idx = 0
         for m in np.arange(len(dataset_epoch_paths)):
+            if 'epoch_2024-07-20_18-32-46.h5' in dataset_epoch_paths[m]:
+                continue
+
             label = []
             try:
                 print('.', end='')
@@ -259,8 +268,10 @@ class EvaluationAPI(metaclass=Singleton):
                 # Save fingerprints for further analysis
                 for n in np.arange(data_fps_reshaped.shape[0]):
                     for k in np.arange(data_fps_reshaped.shape[1]):
-                        fingerprints[n, m, k, :] = data_fps_reshaped[n, k, :]
-                        rssis[n, m, k] = rssi_reshaped[n, k]
+                        fingerprints[n, epoch_idx, k, :] = data_fps_reshaped[n, k, :]
+                        rssis[n, epoch_idx, k] = rssi_reshaped[n, k]
+
+                epoch_idx = epoch_idx + 1
             except Exception as e:
                 print(dataset_epoch_paths[m])
                 print(e)
@@ -268,13 +279,11 @@ class EvaluationAPI(metaclass=Singleton):
 
         return samp_rate, fingerprints, rssis
 
-    def _generate_figure_temporal_stability(self, fp_maps, tx_node_names):
+    def _generate_figure_temporal_stability(self, fp_maps, tx_node_names, fig_full_path):
+        utils.apply_ieee_style()
+
         fp_maps_normalized = MinMaxScaler(feature_range=(0, 1)).fit_transform(fp_maps.reshape(-1, 1))
         fp_maps = fp_maps_normalized.reshape(fp_maps.shape)
-
-        plt.figure(figsize=(10, 8), dpi=100)
-        plt.rcParams['font.family'] = 'Serif'
-        plt.rcParams['font.serif'] = ['Times New Roman']
 
         y_ticks_vals = []
         y_ticks_labels = []
@@ -289,8 +298,10 @@ class EvaluationAPI(metaclass=Singleton):
 
         # plt.legend()
         plt.yticks(ticks=y_ticks_vals, labels=y_ticks_labels)
+        if fig_full_path: plt.savefig(fig_full_path, format='eps', bbox_inches='tight', pad_inches=0.1)
+        plt.show()
 
-    def evaluate_temporal_stability(self, models, rx_nodes, node_ids_epoch, epochs_override, render_fp_heatmaps, render_temporal_heatmap):
+    def evaluate_temporal_stability(self, models, rx_nodes, node_ids_epoch, epochs_override, fig_path, render_heatmaps=False, render_temp_stability=False, rank_dist_fig_file = False):
         # Produce fingerprints for all receivers, using corresponding models
         min_epoch_count = sys.maxsize
         fingerprints_all = []
@@ -298,7 +309,7 @@ class EvaluationAPI(metaclass=Singleton):
         for i, rx_node in enumerate(rx_nodes):
             print(f"Generating eval finerprints for {rx_node}...")
             # Samp rate is always the same, so we'll just use the last one
-            samp_rate, fingerprints, rssis = self._produce_fingerprints(models, rx_node, node_ids_epoch, epochs_override)
+            _, fingerprints, rssis = self._produce_fingerprints(models, rx_node, node_ids_epoch, epochs_override)
             fingerprints_all.append(fingerprints)
             rssis_all.append(rssis)
 
@@ -308,35 +319,51 @@ class EvaluationAPI(metaclass=Singleton):
         fp_maps = np.zeros((len(node_ids_epoch), len(node_ids_epoch), min_epoch_count))
         fp_distances = np.zeros((len(node_ids_epoch), 2))
         for device_idx in np.arange(len(node_ids_epoch)):
-            fp_dist_map, top1_dist, top2_dist = self._evaluate_fingerprint_similarity(node_ids_epoch, fingerprints_all, rssis_all, device_idx, ref_epoch_idx=0, epoch_count=min_epoch_count, show_heatmap = render_fp_heatmaps)
+            fp_dist_map, top1_dist, top2_dist = self._evaluate_fingerprint_similarity(
+                node_ids_epoch, fingerprints_all, rssis_all, 
+                device_idx, ref_epoch_idx=0, epoch_count=min_epoch_count, 
+                fig_full_path=os.path.join(fig_path, f'fp_heatmap_{device_idx}.eps') if render_heatmaps else None)
             fp_distances[device_idx, 0] = top1_dist
             fp_distances[device_idx, 1] = top2_dist
 
             fp_maps[device_idx, :, :] = fp_dist_map
 
-        if render_temporal_heatmap:
-            self._generate_figure_temporal_stability(fp_maps, node_ids_epoch)
+        if render_temp_stability:
+            self._generate_figure_temporal_stability(fp_maps, node_ids_epoch, os.path.join(fig_path, 'temporal_stability.eps'))
 
         # Prepare title for the plot (all settings are taken from the last device's config for now, since they're all almost the same)
-        plot_title = f"Dataset: {self.data_config['dataset_name']}, RX: {rx_nodes}, Frames: [{self.data_config['frame_count_train']}/{self.data_config['frame_count_epoch']}], Samples: [{self.data_config['samples_count']} ({int(samp_rate/1e6)} MHz)], Augmentation: {self.aug_on}, Alpha: {self.model_config['alpha']}"
-
         lower_line_max = max(fp_distances[:, 0])
         higher_line_min = min(fp_distances[:, 1])
 
         fp_threshold = (higher_line_min - lower_line_max) / 2 + lower_line_max
 
+        threshold_gap = higher_line_min - lower_line_max
+
         # Create a figure with two subplots side by side
-        plt.figure(figsize=(10, 6), dpi=80)
-        plt.plot(fp_distances[:, 0], color='blue', label="Top 1st Fingerprint Similarity")
-        plt.plot(fp_distances[:, 1], color='red', label="Top 2nd Fingerprint Similarity")
-        plt.plot([0, len(fp_distances)-1], [fp_threshold, fp_threshold], label="New Device Detection Threshold", color="black", linestyle="--")
+        utils.apply_ieee_style()
+        plt.figure(figsize=(10, 4))
+        plt.plot(fp_distances[:, 0], color='blue', label="Device with Similarity Rank 1")
+        plt.plot(fp_distances[:, 1], color='red', label="Device with Similarity Rank 2")
+        plt.plot([0, len(fp_distances)-1], [fp_threshold, fp_threshold], label="Binary Classification Threshold", color="black", linestyle="--")
+        plt.plot([], [], ' ', label=f"Threshold Gap: {round(threshold_gap, 2)}")
         plt.ylim(0, 0.8)
-        plt.title(plot_title)
+        plt.legend(loc='lower left', bbox_to_anchor=(0, 0))
+        plt.xticks(ticks=range(len(node_ids_epoch)), labels=node_ids_epoch)
+        plt.grid()
+        # plt.title(f"""
+        #           Dataset: {self.data_config['dataset_name']}, 
+        #           RX: {rx_nodes}, 
+        #           Frames: [{self.data_config['frame_count_train']}/{self.data_config['frame_count_epoch']}], 
+        #           Samples: [{self.data_config['samples_count']} ({int(samp_rate/1e6)} MHz)], 
+        #           Augmentation: {self.aug_on}, 
+        #           Alpha: {self.model_config['alpha']}""")
+        if rank_dist_fig_file: 
+            plt.savefig(os.path.join(fig_path, rank_dist_fig_file), format='eps', bbox_inches='tight', pad_inches=0.1)
         plt.show()
 
         return fp_distances
 
-    def evaluate_closed_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, render_confusion_matrix=True):
+    def evaluate_closed_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, fig_path=None):
         epoch_1_device_ids = set(labels_epoch_1.flatten())
         epoch_2_device_ids = set(labels_epoch_2.flatten())
 
@@ -360,21 +387,24 @@ class EvaluationAPI(metaclass=Singleton):
         # Get the accuracy
         accuracy = accuracy_score(labels_epoch_2, labels_epoch_2_predicted)
         
-        if render_confusion_matrix:
+        if fig_path:
             conf_matrix = confusion_matrix(labels_epoch_2, labels_epoch_2_predicted)
-            plt.figure(figsize=(12, 10), dpi=60)
+
+            utils.apply_ieee_style()
+            # plt.figure(figsize=(12, 10), dpi=60)
             # TODO: sns.heatmap(conf_matrix, annot=True, cmap='YlGnBu', xticklabels=device_ids, yticklabels=device_ids)
             sns.heatmap(conf_matrix, annot=True, cmap='YlGnBu')
-            
-            plt.title(f'Device Confusion Matrix (Euclidean Distance)')
+            # plt.title(f'Device Confusion Matrix (Euclidean Distance)')
             plt.xlabel('Device ID')
             plt.ylabel('Device ID')
+            plt.legend()
             plt.tight_layout()
+            if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
             plt.show()
 
         return accuracy
     
-    def evaluate_open_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, render_roc_curve=True):
+    def evaluate_open_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, fig_path=None):
         # Here, we also expect two epochs. But we expect that the number set of devices in epoch #1 will be smaller compared to
         # the set of devices in epoch #2.
         epoch_1_device_ids = set(labels_epoch_1.flatten())
@@ -421,23 +451,24 @@ class EvaluationAPI(metaclass=Singleton):
         # Compute AUC
         roc_auc = auc(fpr, tpr)
 
-        if render_roc_curve:
-            plt.figure(figsize=(10, 8))
+        if fig_path:
+            eer_point = min(zip(fpr, tpr), key=lambda x: abs(x[0] - (1-x[1])))
+
+            utils.apply_ieee_style()
             plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
             plt.plot([0, 1], [0, 1], color='red', lw=2, linestyle='--', label='Random Guess')
-            
-            eer_point = min(zip(fpr, tpr), key=lambda x: abs(x[0] - (1-x[1])))
             plt.plot(eer_point[0], eer_point[1], 'ro', markersize=10, label=f'EER = {eer:.2f}')
             plt.xlim([0.0, 1.0])
             plt.ylim([0.0, 1.05])
             plt.xlabel('False Positive Rate')
             plt.ylabel('True Positive Rate')
-            plt.title('Receiver Operating Characteristic (ROC) Curve')
+            # plt.title('Receiver Operating Characteristic (ROC) Curve')
             plt.legend(loc="lower right")
             plt.grid(True)
+            if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
             plt.show()
 
-    def evaluate_open_set_knn_multirx(self, models, rx_ids, data_epochs_1, labels_epochs_1, data_epochs_2, labels_epochs_2, rssis_epoch_2, model_config, render_roc_curve=True):
+    def evaluate_open_set_knn_multirx(self, models, rx_ids, data_epochs_1, labels_epochs_1, data_epochs_2, labels_epochs_2, rssis_epoch_2, model_config, fig_path=None):
         ref_rx = rx_ids[0]
 
         print(rx_ids)
@@ -495,31 +526,31 @@ class EvaluationAPI(metaclass=Singleton):
         # Compute AUC
         roc_auc = auc(fpr, tpr)
 
-        if render_roc_curve:
-            plt.figure(figsize=(10, 8))
+        if fig_path:
+            utils.apply_ieee_style()
+            eer_point = min(zip(fpr, tpr), key=lambda x: abs(x[0] - (1-x[1])))
             plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
             plt.plot([0, 1], [0, 1], color='red', lw=2, linestyle='--', label='Random Guess')
-            
-            eer_point = min(zip(fpr, tpr), key=lambda x: abs(x[0] - (1-x[1])))
             plt.plot(eer_point[0], eer_point[1], 'ro', markersize=10, label=f'EER = {eer:.2f}')
             plt.xlim([0.0, 1.0])
             plt.ylim([0.0, 1.05])
             plt.xlabel('False Positive Rate')
             plt.ylabel('True Positive Rate')
-            plt.title('Receiver Operating Characteristic (ROC) Curve for Weighted KNN')
+            # plt.title('Receiver Operating Characteristic (ROC) Curve for Weighted KNN')
             plt.legend(loc="lower right")
             plt.grid(True)
+            if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
             plt.show()
 
     def evaluate_closed_set_multirx(self, rx_ids, epoch_idx_enroll = 0, epoch_idx_identify = 1,
                                     enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
                                     identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
                                     frame_count_enroll = 10, frame_count_identify = 10,
-                                    enroll_threshold = 0, identify_threshold = 0.55):
+                                    enroll_threshold = 0, identify_threshold = 0.55, fig_path = None):
         self.fp_api.purge_database()
         self.fp_api.load_models()
 
-        _, grid_node_coordinates = self.generate_grid_node_ids()
+        _, grid_node_coordinates = utils.generate_grid_node_ids()
 
         # Enroll all the devices from epoch #1
         enrolled_device_map = {}
@@ -570,18 +601,14 @@ class EvaluationAPI(metaclass=Singleton):
         labels = sorted(list(enrolled_device_map.keys()))
 
         # Plot the confusion matrix
-        plt.figure(figsize=(12, 10))  # Increased figure size
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                    xticklabels=labels, yticklabels=labels, 
-                    square=True)  # square=True ensures square cells
+        utils.apply_ieee_style()
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels, square=True)
         plt.xlabel('Predicted')
         plt.ylabel('True')
         plt.title('Confusion Matrix with Device IDs')
-
-        # Rotate the tick labels and set their alignment
         plt.setp(plt.gca().get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-
-        plt.tight_layout()  # Adjust the layout to prevent clipping of tick-labels
+        plt.tight_layout()
+        if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
         plt.show()
 
 if __name__ == "__main__":
