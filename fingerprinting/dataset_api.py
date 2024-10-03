@@ -16,6 +16,46 @@ class DatasetAPI(metaclass=Singleton):
     RX_3 = 'node20-1'
     RX_4 = 'node19-19'
 
+    DATASET_V2_TX_MAX_EPOCHS = [39, 239, 269, 280, 300, 315, 330, 394, 398]
+    DATASET_V4_TX_MAX_EPOCHS = [1, 259, 10, 269, 398, 247, 280, 186, 315, 189]
+    DATASET_V4_TX_MAX_DEVICES = [1, 259, 10, 394, 269, 270, 398, 273, 280, 300, 186, 315, 189, 330, 209, 219, 247, 379, 252]
+
+    DATASET_V2_EPOCHS_MAX_DEVICES = None
+    # DATASET_V4_EPOCHS_MAX_DEVICES = None
+    DATASET_V4_EPOCHS_MAX_DEVICES = [ 
+        'epoch_2024-08-09_17-44-31',
+        'epoch_2024-08-09_09-45-28',
+        'epoch_2024-08-09_06-24-29',
+        'epoch_2024-08-09_13-14-55',
+        'epoch_2024-08-09_09-15-25',
+        'epoch_2024-08-09_01-12-19',
+        'epoch_2024-08-08_19-59-37',
+        'epoch_2024-08-08_20-33-18',
+        'epoch_2024-08-09_03-34-38',
+        'epoch_2024-08-08_19-19-27',
+        'epoch_2024-08-09_04-30-31',
+        'epoch_2024-08-09_00-15-50',
+        'epoch_2024-08-09_04-59-00',
+        'epoch_2024-08-08_23-15-19',
+        'epoch_2024-08-09_08-47-08',
+        'epoch_2024-08-08_21-40-14',
+        'epoch_2024-08-09_11-16-36',
+        'epoch_2024-08-08_21-04-40',
+        'epoch_2024-08-09_14-40-55',
+        'epoch_2024-08-09_03-05-59',
+        'epoch_2024-08-09_16-11-55',
+        'epoch_2024-08-09_10-46-06',
+        'epoch_2024-08-08_22-15-27',
+        'epoch_2024-08-09_05-56-24',
+        'epoch_2024-08-09_17-14-46',
+        'epoch_2024-08-09_10-15-26',
+        'epoch_2024-08-09_15-41-02',
+        'epoch_2024-08-09_19-53-51',
+        'epoch_2024-08-09_19-21-11',
+        'epoch_2024-08-09_05-27-49'
+        ]
+
+
     def __init__(self, root_dir, matlab_src_dir, matlab_session_id, aug_on=False):
         self.root_dir = root_dir
         self.dataset_v1_path = os.path.join(self.root_dir, 'orbit_dataset_v1')

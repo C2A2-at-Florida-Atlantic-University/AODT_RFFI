@@ -4,7 +4,7 @@
 
 function T = find_tx_frames(filepath, bw, samp_rate, search_mac_tx, preamble_len)
     X = read_iq(filepath);
-    % X = X(1:floor(length(X) / 10)); % TODO: only for larger files
+    X = X(1:floor(length(X) / 10)); % TODO: only for larger files
 
     % 1. Analyze the waveform
     analyzer = WaveformAnalyzer();

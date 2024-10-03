@@ -1,5 +1,33 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import ipywidgets as widgets
+from IPython.display import display
+
+def read_dat_iq_file(file_path):
+    raw_data = np.fromfile(file_path, dtype=np.float32)
+    
+    iq_samples = raw_data[::2] + 1j * raw_data[1::2]
+    
+    return iq_samples
+
+def request_value_dropdown(prompt, options, callback):
+    dropdown = widgets.Dropdown(
+        options=options,
+        value=options[0],
+        description=prompt,
+    )
+
+    # Function to handle the dropdown value change
+    def on_change(change):
+        if change['type'] == 'change' and change['name'] == 'value':
+            print(f"Selected option: {change['new']}")
+            callback(change['new'])
+
+    # Attach the function to the dropdown
+    dropdown.observe(on_change)
+
+    # Display the dropdown
+    display(dropdown)
 
 def generate_grid_node_ids():
     ids = {}

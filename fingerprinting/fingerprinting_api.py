@@ -103,6 +103,7 @@ class FingerprintingAPI(metaclass=Singleton):
         plt.show()
 
     def train_models(self, apply_noise=False):
+        # TODO: create the folder "my_models" if it doesn't exist prior to saving the trained model
         train_histories = {}
 
         for rx_id in self.rx_ids:
@@ -253,6 +254,9 @@ class FingerprintingAPI(metaclass=Singleton):
 
             # 2. Calculate device candidate weighted distance to our frame
             candidate_distances[candidate_id] = sum([rx_distances[rx_id] * self.dataset_api.rssi_to_weight(rx_rssis[rx_id]) for rx_id in self.rx_ids])/len(self.rx_ids)
+
+        if len(candidate_distances) > 0:
+            print(min(candidate_distances.values()))
 
         # 4. Are we dealing with a known device? (one of distances below threshold)
         response = {}

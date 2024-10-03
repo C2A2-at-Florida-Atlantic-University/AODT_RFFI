@@ -38,8 +38,8 @@ class EvaluationAPI(metaclass=Singleton):
     def evaluate_preamble_offset(self, rx_id, frame_start_train, offset_range, 
                                  epoch_idx_enroll=0, epoch_idx_identify=1, 
                                  frame_count_enroll=100, frame_count_identify=100, 
-                                 enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
-                                 identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 enroll_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
+                                 identify_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
                                  use_pretrained = False, aug_on = False, apply_noise=False, fig_name = None, fig_path=None):
         print("Load the training dataset")
         dataset_train_path, dataset_epoch_paths, model_path, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
@@ -89,8 +89,8 @@ class EvaluationAPI(metaclass=Singleton):
     def evaluate_loss_function(self, rx_id, loss_functions = ['triplet_loss', 'quadruplet_loss'],
                                  epoch_idx_enroll=0, epoch_idx_identify=1, 
                                  frame_count_enroll=100, frame_count_identify=100, 
-                                 enroll_device_idx = [39, 239, 269, 280, 300],
-                                 identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                 enroll_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS[0:5],
+                                 identify_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
                                  aug_on = False, apply_noise=False, fig_path=None):
 
         print("Load the training dataset")
@@ -136,12 +136,13 @@ class EvaluationAPI(metaclass=Singleton):
             else: 
                 self.evaluate_open_set_knn(feature_extractor, data_enroll, labels_enroll, data_identify, labels_identify, self.model_config, full_path)
 
-    def render_orbit_grid(self, tx_node_ids, rx_node_ids, tx_node_id_curr):
+    def render_orbit_grid(self, tx_node_ids_1, tx_node_ids_2, rx_node_ids, tx_node_id_curr):
         _, node_coordinates = utils.generate_grid_node_ids()
 
-        tx_node_coordinates = [node_coordinates[item] for item in tx_node_ids]
+        tx_node_coordinates_1 = [node_coordinates[item] for item in tx_node_ids_1]
+        tx_node_coordinates_2 = [node_coordinates[item] for item in tx_node_ids_2]
         rx_node_coordinates = [node_coordinates[item] for item in rx_node_ids]
-        tx_node_coordinates_curr = node_coordinates[tx_node_id_curr]
+        
 
         plt.figure(figsize=(8, 8), dpi=80)
         for i in np.arange(1, 21):
@@ -150,13 +151,16 @@ class EvaluationAPI(metaclass=Singleton):
 
                 plt.plot(i, j, '.', color='#D3D3D3')
 
-                if node in tx_node_coordinates:
-                    plt.plot(i, j, 'o', markerfacecolor='none', markeredgecolor='grey', markersize=8)
+                if node in tx_node_coordinates_1:
+                    plt.plot(i, j, 'o', markerfacecolor='none', markeredgecolor='blue', markersize=8)
+                if node in tx_node_coordinates_2:
+                    plt.plot(i, j, 'o', markerfacecolor='none', markeredgecolor='blue', markersize=8)
 
         for rx_device in rx_node_coordinates:
             plt.plot(rx_device[0], rx_device[1], 'o', color='black', markersize=10)
 
-        if tx_node_coordinates_curr:
+        if tx_node_id_curr != -1:
+            tx_node_coordinates_curr = node_coordinates[tx_node_id_curr]
             plt.plot(tx_node_coordinates_curr[0], tx_node_coordinates_curr[1], '.', color='red')
         plt.xticks(np.arange(2, 21, 2))
         plt.yticks(np.arange(2, 21, 2))
@@ -221,7 +225,6 @@ class EvaluationAPI(metaclass=Singleton):
 
             plt.show()
             
-
         device_distances.sort()
 
         return avg_distances, device_distances[0], device_distances[1]
@@ -233,15 +236,12 @@ class EvaluationAPI(metaclass=Singleton):
         # Retrieve information about the dataset: paths to dataset files, node IDs, sampling rate
         _, dataset_epoch_paths, _, _, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_name, epochs_override)
 
-        fingerprints = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths)-1, self.data_config['frame_count_epoch'], self.model_config['fp_len']))
-        rssis = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths)-1, self.data_config['frame_count_epoch']))
+        fingerprints = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths), self.data_config['frame_count_epoch'], self.model_config['fp_len']))
+        rssis = np.zeros(shape=(len(node_ids_epoch), len(dataset_epoch_paths), self.data_config['frame_count_epoch']))
 
         # Extract fingerprint for every epoch
         epoch_idx = 0
         for m in np.arange(len(dataset_epoch_paths)):
-            if 'epoch_2024-07-20_18-32-46.h5' in dataset_epoch_paths[m]:
-                continue
-
             label = []
             try:
                 print('.', end='')
@@ -471,8 +471,6 @@ class EvaluationAPI(metaclass=Singleton):
     def evaluate_open_set_knn_multirx(self, models, rx_ids, data_epochs_1, labels_epochs_1, data_epochs_2, labels_epochs_2, rssis_epoch_2, model_config, fig_path=None):
         ref_rx = rx_ids[0]
 
-        print(rx_ids)
-
         epoch_1_device_ids = set(labels_epochs_1[ref_rx].flatten())
         epoch_2_device_ids = set(labels_epochs_2[ref_rx].flatten())
 
@@ -543,8 +541,8 @@ class EvaluationAPI(metaclass=Singleton):
             plt.show()
 
     def evaluate_closed_set_multirx(self, rx_ids, epoch_idx_enroll = 0, epoch_idx_identify = 1,
-                                    enroll_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
-                                    identify_device_idx = [39, 239, 269, 280, 300, 315, 330, 394, 398],
+                                    enroll_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
+                                    identify_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
                                     frame_count_enroll = 10, frame_count_identify = 10,
                                     enroll_threshold = 0, identify_threshold = 0.55, fig_path = None):
         self.fp_api.purge_database()
@@ -555,37 +553,43 @@ class EvaluationAPI(metaclass=Singleton):
         # Enroll all the devices from epoch #1
         enrolled_device_map = {}
         for device_id in enroll_device_idx:
-            print(f"Enrolling device: {grid_node_coordinates[device_id]}")
+            try:
+                print(f"Enrolling device: {grid_node_coordinates[device_id]}")
 
-            # Retrieve frames (across all receivers) for a given device
-            frames_rx_all = {}
-            for rx_id in rx_ids:
-                _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-                frames_rx_all[rx_id] = self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_enroll, device_idx=device_id, frame_count=frame_count_enroll)
+                # Retrieve frames (across all receivers) for a given device
+                frames_rx_all = {}
+                for rx_id in rx_ids:
+                    _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+                    frames_rx_all[rx_id] = self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_enroll, device_idx=device_id, frame_count=frame_count_enroll)
 
-            # Enroll the device
-            enrolled_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=enroll_threshold)
-            print(enrolled_device_hash)
+                # Enroll the device
+                enrolled_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=enroll_threshold)
+                print(enrolled_device_hash)
 
-            enrolled_device_map[device_id] = enrolled_device_hash
+                enrolled_device_map[device_id] = enrolled_device_hash
+            except Exception as e:
+                print(f"Failed to enroll device {device_id}: {e}")
 
         # Attempt to identify devices from epoch #2
         identified_device_map = {}
         for device_id in identify_device_idx:
-            enrolled_device_hash = enrolled_device_map[device_id]['device_hash']
-            print(f"Identifying device: {grid_node_coordinates[device_id]}. Expected hash: {enrolled_device_hash}")
+            try:
+                enrolled_device_hash = enrolled_device_map[device_id]['device_hash']
+                print(f"Identifying device: {grid_node_coordinates[device_id]}. Expected hash: {enrolled_device_hash}")
 
-            # Retrieve frames (across all receivers) for a given device
-            frames_rx_all = {}
-            for rx_id in rx_ids:
-                _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-                frames_rx_all[rx_id] =self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_identify, device_idx=device_id, frame_count=frame_count_identify)
+                # Retrieve frames (across all receivers) for a given device
+                frames_rx_all = {}
+                for rx_id in rx_ids:
+                    _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+                    frames_rx_all[rx_id] =self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_identify, device_idx=device_id, frame_count=frame_count_identify)
 
-            # Process new signal
-            identification_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=identify_threshold)
-            print(identification_device_hash)
+                # Process new signal
+                identification_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=identify_threshold)
+                print(identification_device_hash)
 
-            identified_device_map[device_id] = identification_device_hash
+                identified_device_map[device_id] = identification_device_hash
+            except Exception as e:
+                print(f"Failed to identify device {device_id}: {e}")
 
         # Create a mapping from hash to ID
         hash_to_id = {v['device_hash']: k for k, v in enrolled_device_map.items()}
@@ -610,6 +614,98 @@ class EvaluationAPI(metaclass=Singleton):
         plt.tight_layout()
         if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
         plt.show()
+
+    def evaluate_open_set_multirx(self, rx_ids, epoch_idx_enroll = 0, epoch_idx_identify = 1,
+                                    enroll_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS[0:5],
+                                    identify_device_idx = DatasetAPI.DATASET_V2_TX_MAX_EPOCHS,
+                                    frame_count_enroll = 10, frame_count_identify = 10,
+                                    enroll_threshold = 0, identify_threshold = 0.55, fig_path = None):
+        self.fp_api.purge_database()
+        self.fp_api.load_models()
+
+        _, grid_node_coordinates = utils.generate_grid_node_ids()
+
+        # Enroll all the devices from epoch #1
+        enrolled_device_map = {}
+        for device_id in enroll_device_idx:
+            try:
+                print(f"Enrolling device: {grid_node_coordinates[device_id]}")
+
+                # Retrieve frames (across all receivers) for a given device
+                frames_rx_all = {}
+                for rx_id in rx_ids:
+                    _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+                    frames_rx_all[rx_id] = self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_enroll, device_idx=device_id, frame_count=frame_count_enroll)
+
+                # Enroll the device
+                enrolled_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=enroll_threshold)
+                print(enrolled_device_hash)
+
+                enrolled_device_map[device_id] = enrolled_device_hash
+            except Exception as e:
+                print(f"Failed to enroll device {device_id}: {e}")
+
+        pred_labels = []
+        true_labels = [1 if item in enroll_device_idx else 0 for item in identify_device_idx]
+
+        # Attempt to identify devices from epoch #2
+        identified_device_map = {}
+        for device_id in identify_device_idx:
+            try:
+                print(f"Trying to identify a device: {grid_node_coordinates[device_id]}")
+
+                # Retrieve frames (across all receivers) for a given device
+                frames_rx_all = {}
+                for rx_id in rx_ids:
+                    _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
+                    frames_rx_all[rx_id] = self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx_identify, device_idx=device_id, frame_count=frame_count_identify)
+
+                # Process new signal
+                identification_device_hash = self.fp_api.new_signal(frames_rx_all, new_device_threshold=identify_threshold)
+                print(identification_device_hash)
+
+                identified_device_map[device_id] = identification_device_hash
+
+                pred_labels.append(0 if identification_device_hash['is_new'] else 1)
+            except Exception as e:
+                print(f"Failed to identify device {device_id}: {e}")
+
+        print(true_labels)
+        print(pred_labels)
+
+        # Compute receiver operating characteristic (ROC).
+        fpr, tpr, _ = roc_curve(true_labels, pred_labels, pos_label = 1)
+
+        print()
+
+        # Invert false positive and true positive ratios to convert from distances to probabilities
+        fpr = 1 - fpr  
+        tpr = 1 - tpr
+
+        # Compute EER
+        fnr = 1-tpr
+        abs_diffs = np.abs(fpr - fnr)
+        min_index = np.argmin(abs_diffs)
+        eer = np.mean((fpr[min_index], fnr[min_index]))
+        
+        # Compute AUC
+        roc_auc = auc(fpr, tpr)
+
+        if fig_path:
+            utils.apply_ieee_style()
+            eer_point = min(zip(fpr, tpr), key=lambda x: abs(x[0] - (1-x[1])))
+            plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {roc_auc:.2f})')
+            plt.plot([0, 1], [0, 1], color='red', lw=2, linestyle='--', label='Random Guess')
+            plt.plot(eer_point[0], eer_point[1], 'ro', markersize=10, label=f'EER = {eer:.2f}')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            # plt.title('Receiver Operating Characteristic (ROC) Curve for Weighted KNN')
+            plt.legend(loc="lower right")
+            plt.grid(True)
+            if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
+            plt.show()
 
 if __name__ == "__main__":
     print("Please refer to the primary workbook or the README for tutorial on how to use this class.")
