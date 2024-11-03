@@ -17,7 +17,8 @@ class DatasetAPI(metaclass=Singleton):
     DATASET_V2 = 'v2_jul_19' # 25 Msps, 24-hour period, automated capture, 4 RX nodes
     DATASET_V3 = 'v2_jul_21' # 20 Msps, 4-hour period, automated capture, 4 RX nodes
     DATASET_V4 = 'v3_aug_8'  # 25 Msps, 24-hour period, automated capture, 3 RX nodes (1-1, 1-20, 19-19)
-    DATASET_WISIG = 'wisig'
+    DATASET_WISIG_OLD = 'wisig_old'
+    DATASET_WISIG_NEW = 'wisig_new'
     DATASET_V2V4 = 'v2v4' # here, we combine signals from v2_jul_19 and v3_aug_8 datasets to train multi-day performance
 
     RX_1 = 'node1-1'
@@ -73,7 +74,8 @@ class DatasetAPI(metaclass=Singleton):
         self.dataset_v2_path = os.path.join(self.root_dir, 'orbit_dataset_v2_jul19')
         self.dataset_v3_path = os.path.join(self.root_dir, 'orbit_dataset_v2_jul21')
         self.dataset_v4_path = os.path.join(self.root_dir, 'orbit_dataset_v3_aug8')
-        self.dataset_wisig_path = os.path.join(self.root_dir, 'wisig_dataset_1rx')
+        self.dataset_wisig_old_path = os.path.join(self.root_dir, 'wisig_dataset_old_1rx')
+        self.dataset_wisig_new_path = os.path.join(self.root_dir, 'wisig_dataset_new_1rx')
 
         if aug_on:
             self.mateng = matlab.engine.connect_matlab(matlab_session_id)
@@ -92,27 +94,31 @@ class DatasetAPI(metaclass=Singleton):
 
         return dataset_train_path, dataset_epoch_paths, model_path, samp_rate
 
-    # Non-equalized version
-    # def _load_dataset_wisig(self):
-    #     dataset_train_path = os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_01', 'Train', 'node1-1_non_eq_train.h5')
-    #     model_path = os.path.join(self.dataset_wisig_path, 'my_models')
-    #     dataset_epoch_paths = [
-    #         os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_01', 'Test', 'non_eq_epoch_2021-03-01_00-00-00.h5'),
-    #         os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_08', 'Test', 'non_eq_epoch_2021-03-08_00-00-00.h5')
-    #     ]
-    #     samp_rate = 25e6
-    #     return dataset_train_path, dataset_epoch_paths, model_path, samp_rate
-
-    # Equalized version
-    def  _load_dataset_wisig(self):
-        dataset_train_path = os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_01', 'Train', 'node1-1_eq_train.h5')
-        model_path = os.path.join(self.dataset_wisig_path, 'my_models')
-        dataset_epoch_paths = [
-            os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_01', 'Test', 'eq_epoch_2021-03-01_00-00-00.h5'),
-            os.path.join(self.dataset_wisig_path, 'wisig_dataset-2021_03_08', 'Test', 'eq_epoch_2021-03-08_00-00-00.h5')
+    def  _load_dataset_wisig_old(self, equalized=False):
+        equalized_str = 'eq' if equalized else 'non_eq'
+        dataset_train_paths = [
+            os.path.join(self.dataset_wisig_old_path, 'wisig_dataset-2021_03_01', 'Train', f'node1-1_{equalized_str}_train.h5'),
+            os.path.join(self.dataset_wisig_old_path, 'wisig_dataset-2021_03_08', 'Train', f'node1-1_{equalized_str}_train.h5')
         ]
+        dataset_epoch_paths = [
+            os.path.join(self.dataset_wisig_old_path, 'wisig_dataset-2021_03_01', 'Test', f'{equalized_str}_epoch_2021-03-01_00-00-00.h5'),
+            os.path.join(self.dataset_wisig_old_path, 'wisig_dataset-2021_03_08', 'Test', f'{equalized_str}_epoch_2021-03-08_00-00-00.h5')
+        ]
+        model_path = os.path.join(self.dataset_wisig_old_path, 'my_models')
         samp_rate = 25e6
-        return dataset_train_path, dataset_epoch_paths, model_path, samp_rate
+        return dataset_train_paths, dataset_epoch_paths, model_path, samp_rate
+
+    def _load_dataset_wisig_new(self, equalized=False):
+        equalized_str = 'eq' if equalized else 'non_eq'
+        dataset_paths = [
+            os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_01', f"node1-1_{equalized_str}_wifi_2021_03_01.h5"),
+            os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_08', f"node1-1_{equalized_str}_wifi_2021_03_08.h5"),
+            os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_15', f"node1-1_{equalized_str}_wifi_2021_03_15.h5"),
+            os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_23', f"node1-1_{equalized_str}_wifi_2021_03_23.h5")
+        ]
+        model_path = os.path.join(self.dataset_wisig_old_path, 'my_models')
+        samp_rate = 25e6
+        return dataset_paths, model_path, samp_rate
 
     def _load_dataset_v1(self, rx_name, allowed_epochs):
         dataset_train_path = os.path.join(self.dataset_v1_path, 'training_2024-07-13_06-53-20', rx_name + '_non_eq_train.h5')
@@ -183,7 +189,7 @@ class DatasetAPI(metaclass=Singleton):
 
         return devices
 
-    def load_dataset_info(self, dataset_name, rx_name, allowed_epochs):
+    def load_dataset_info(self, dataset_name, rx_name, allowed_epochs, wisig_equalized=False, wisig_disjoint=False):
         if dataset_name == self.DATASET_V1:
             dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_v1(rx_name, allowed_epochs)
         elif dataset_name == self.DATASET_V2:
@@ -192,17 +198,26 @@ class DatasetAPI(metaclass=Singleton):
             dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_v3(rx_name, allowed_epochs)
         elif dataset_name == self.DATASET_V4:
             dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_v4(rx_name, allowed_epochs)    
-        elif dataset_name == self.DATASET_WISIG:
-            dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_wisig()
+        elif dataset_name == self.DATASET_WISIG_OLD:
+            # Note: in this case, dataset_train_path actually returns a list of two paths (day #1 and day #2)
+            dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_wisig_old(equalized=wisig_equalized)
+        elif dataset_name == self.DATASET_WISIG_NEW:
+            # Note, in this case, we return a list of paths to h5 files without train/test split; the splitting will need to be done separately
+            dataset_paths, model_path, samp_rate = self._load_dataset_wisig_new(equalized=wisig_equalized)
         elif dataset_name == self.DATASET_V2V4:
             dataset_train_path, dataset_epoch_paths, model_path, samp_rate = self._load_dataset_v2v4(rx_name)
         else: print('Invalid dataset name.')
 
-        if dataset_name == self.DATASET_WISIG:
+        if dataset_name == self.DATASET_WISIG_OLD:
             node_ids_train = [9, 11, 15, 17, 25, 38, 52, 57, 60, 69, 80, 84, 129, 130, 133, 142, 147, 157, 190, 196, 203, 206, 239, 242, 280, 300, 315, 329, 330, 360, 378, 380, 391]
-            # node_ids_epoch = [114, 159, 269, 266, 394, 398] # disjoint set of emitters
-            # node_ids_epoch = [114, 159, 394, 398, 267, 270] # fixed after checking wisig data
-            node_ids_epoch = [9, 11, 15, 17, 25, 38] # joint set of emitters (training subset)
+            node_ids_epoch = [114, 159, 269, 266, 394, 398] if wisig_disjoint else [9, 11, 15, 17, 25, 38]
+        elif dataset_name == self.DATASET_WISIG_NEW:
+            # Note: all of these nodes are available on ALL 4 days of data capture
+            node_ids_train = [60, 69, 80, 114, 130, 133, 142, 147, 196, 203, 206, 239, 266, 269, 280, 315, 380, 391, 398]
+            node_ids_epoch = [9, 11, 15, 17, 38, 57] if wisig_disjoint else [269, 280, 315, 380, 391, 398]
+            # node_ids_epoch = [269, 280, 315, 380, 391, 398] if wisig_disjoint else node_ids_train
+
+            return dataset_paths, model_path, node_ids_train, node_ids_epoch, samp_rate
         elif dataset_name == self.DATASET_V2V4:
             node_ids_train = self._get_dataset_devices(self.load_raw_dataset(dataset_train_path)[1], show=False)
             node_ids_epoch = [269, 398, 280, 315, 394, 300, 330]
@@ -239,63 +254,81 @@ class DatasetAPI(metaclass=Singleton):
             
         return iq, labels, rssi
 
-    def load_raw_dataset_wisig_eq(self, path, shuffle=False, compensate_cfo=False, augment_cfo=False):
-        iq, labels, rssi = self.load_raw_dataset(path, shuffle)
-        iq = iq[:, 0:400] # keep only preambles
+    def load_raw_dataset_wisig(self, path_train, path_test, shuffle=False):
+        print(path_train)        
+        print(path_test)
 
-        # First (if needed), compensate CFO, before (optionally) applying randomly-generated CFO with a specified distribution
-        if compensate_cfo:
-            if 'non_eq' in path: # we're dealing with non-eq signal and simply need to remove CFO
-                print('Removing CFO from raw signal.')
-                cfo = cfo_utils.extract_data_cfo(iq)
-                iq = cfo_utils.compensate_cfo(iq, cfo[:, 0] + cfo[:, 1])
-            else: # we're dealing with equalized signal and need to extract CFO from non_eq
-                print('Removing CFO from equalized signal.')
-                iq_raw, _, _ = self.load_raw_dataset(path.replace('eq_', 'non_eq_'))
-                cfo = cfo_utils.extract_data_cfo(iq_raw)
-                iq = cfo_utils.compensate_cfo(iq, cfo[:, 0] + cfo[:, 1])
-                # TODO: here we plot CFO before and after compensation across retrieved samples
-                # cfo_new = cfo_utils.extract_data_cfo(iq)
-                # plt.figure(figsize=(10, 8), dpi=80)
-                # plt.plot(cfo[:, 0] + cfo[:, 1], 'red', label='Original CFO values')
-                # plt.plot(cfo_new[:, 0] + cfo_new[:, 1], 'blue', label='Corrected CFO values (equalized!)')
-                # plt.ylim(-50e3, 50e3)
-                # plt.title('Day 2: CFO removal')
-                # plt.show()
-        else: print('Not removing CFO.')
+        iq_train, labels_train, rssi_train = self.load_raw_dataset(path_train, shuffle)
+        iq_test, labels_test, rssi_test = self.load_raw_dataset(path_test, shuffle)
 
-        # Second (if needed), apply randomly-generated CFO -- but with a distribution that we control
+        iq = np.concatenate((iq_train, iq_test), axis=0)
+        labels = np.concatenate((labels_train, labels_test), axis=0)
+        rssi = np.concatenate((rssi_train, rssi_test), axis=0) if rssi_train is not None and rssi_test is not None else None
+
+        return iq, labels, rssi
+
+    def augment_dataset(self, data, labels, rssi, augment_cfo=False, multiplier=1):
         if augment_cfo:
-            augment_mult = 4
-            # augment_mult = 2
+            print(f'Augmenting the dataset: x{multiplier}, CFO range: [{ppm_range[0]}, {ppm_range[1]}], dist: {distribution}')
+        else: print(f'Augmenting dataset: x{multiplier}, randomized CFO adding disabled.')
+
+        # 1. Replicate the data K times
+        data = np.repeat(data, multiplier, axis=0)
+        labels = np.repeat(labels, multiplier, axis=0)
+        if rssi is not None: rssi = np.repeat(rssi, multiplier, axis=0)
+
+        # Generate CFO values for augmentation
+        if augment_cfo:
             ppm_range = [-40, 40] # idealistic possible values
             # ppm_range = [-14, -2.5] # observed values
             distribution = 'uniform'
             freq = 2.4e9
             rnd = np.random.default_rng(42)
 
-            print(f'Augmenting the dataset: x{augment_mult}, CFO range: [{ppm_range[0]}, {ppm_range[1]}], dist: {distribution}')
+            cfo_values = cfo_utils.generate_cfo_values(
+                n_samples=data.shape[0], 
+                distribution=distribution,
+                ppm_range=ppm_range,
+                freq=freq,
+                rnd=rnd,
+                show=False)
 
-            # 1. Replicate the data K times
-            iq = np.repeat(iq, augment_mult, axis=0)
-            labels = np.repeat(labels, augment_mult, axis=0)
-            if rssi is not None: rssi = np.repeat(rssi, augment_mult, axis=0)
+            # 3. Apply generated CFO values to the dataset
+            data = cfo_utils.compensate_cfo(data, cfo_values)
 
-            # # 2. Generate CFO values for augmentation
-            # cfo_values = cfo_utils.generate_cfo_values(
-            #     n_samples=iq.shape[0], 
-            #     distribution=distribution,
-            #     ppm_range=ppm_range,
-            #     freq=freq,
-            #     rnd=rnd,
-            #     show=False)
+        return data, labels, rssi
 
-            # # 3. Apply generated CFO values to the dataset
-            # iq = cfo_utils.compensate_cfo(iq, cfo_values)
-        
-        else: print('Not augmenting CFO.')
+    # def load_raw_dataset_wisig(self, path, shuffle=False, compensate_cfo=False, augment_cfo=False):
+    #     iq, labels, rssi = self.load_raw_dataset(path, shuffle)
+    #     iq = iq[:, 0:400] # keep only preambles
 
-        return iq, labels, rssi
+    #     # First (if needed), compensate CFO, before (optionally) applying randomly-generated CFO with a specified distribution
+    #     if compensate_cfo:
+    #         if 'non_eq' in path: # we're dealing with non-eq signal and simply need to remove CFO
+    #             print('Removing CFO from raw signal.')
+    #             cfo = cfo_utils.extract_data_cfo(iq)
+    #             iq = cfo_utils.compensate_cfo(iq, cfo[:, 0] + cfo[:, 1])
+    #         else: # we're dealing with equalized signal and need to extract CFO from non_eq
+    #             print('Removing CFO from equalized signal.')
+    #             iq_raw, _, _ = self.load_raw_dataset(path.replace('eq_', 'non_eq_'))
+    #             cfo = cfo_utils.extract_data_cfo(iq_raw)
+    #             iq = cfo_utils.compensate_cfo(iq, cfo[:, 0] + cfo[:, 1])
+    #             # TODO: here we plot CFO before and after compensation across retrieved samples
+    #             # cfo_new = cfo_utils.extract_data_cfo(iq)
+    #             # plt.figure(figsize=(10, 8), dpi=80)
+    #             # plt.plot(cfo[:, 0] + cfo[:, 1], 'red', label='Original CFO values')
+    #             # plt.plot(cfo_new[:, 0] + cfo_new[:, 1], 'blue', label='Corrected CFO values (equalized!)')
+    #             # plt.ylim(-50e3, 50e3)
+    #             # plt.title('Day 2: CFO removal')
+    #             # plt.show()
+    #     else: print('Not removing CFO.')
+
+    #     # Second (if needed), apply randomly-generated CFO -- but with a distribution that we control
+    #     # multiplier = 1
+    #     multiplier = 4
+    #     iq, labels, rssi = self.augment_dataset(iq, labels, rssi, augment_cfo=augment_cfo, multiplier=multiplier)
+
+    #     return iq, labels, rssi
 
     def filter_frames_by_rssi(self, data, labels, rssi, device_frames, show_dist=False):
         device_count = len(set(labels.flatten()))

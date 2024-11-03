@@ -436,7 +436,7 @@ class EvaluationAPI(metaclass=Singleton):
 
             conf_matrix = confusion_matrix(labels_epoch_2, labels_epoch_2_predicted, labels=device_ids)
             conf_matrix_percent = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis] * 100
-            annotations = np.array([["{:.2f}%".format(value) for value in row] for row in conf_matrix_percent])
+            annotations = np.array([["{:.0f}%".format(value) for value in row] for row in conf_matrix_percent])
 
             utils.apply_ieee_style()
             plt.figure(figsize=(10, 8), dpi=80)

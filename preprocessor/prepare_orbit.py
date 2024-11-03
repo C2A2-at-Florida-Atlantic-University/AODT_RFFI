@@ -179,7 +179,7 @@ def save_dataset_h5(file_target, label, data, rssi):
         h5file.create_dataset('data', data=data, dtype='float64')  
 
 # Package & store epoch infromation in h5 file (ready for RFFI)
-def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preamble_len):
+def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preamble_len, enable_equalization):
     for rx_name in epoch_preambles.keys():
         rx_epochs = epoch_preambles[rx_name]
 
@@ -205,13 +205,14 @@ def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preambl
 
                 h5_idx = h5_idx + 1
 
-        dataset_filepath = os.path.join(target_dir, f'node{rx_name}_{session_name}.h5')
+        eq_chunk = 'eq' if enable_equalization else 'non_eq'
+        dataset_filepath = os.path.join(target_dir, f'node{rx_name}_{eq_chunk}_{session_name}.h5')
         save_dataset_h5(dataset_filepath, h5_labels, h5_data, h5_rssi)
 
 def is_session_valid(session_name):
     return session_name[0:6] == 'epoch_' or session_name[0:9] == 'training_'
     
-def process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_len):
+def process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_len, enable_equalization):
     print(f"Processing {dat_file}")
 
     # 3.1. Download the file from S3
@@ -230,7 +231,7 @@ def process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_
     tx_mac = node_macs[tx_name]['mac']
 
     # 3.2. Decode the file via MATLAB script, extract preambles
-    response = matlab_engine.find_tx_frames(local_filepath, 'CBW20', samp_rate, tx_mac, preamble_len)
+    response = matlab_engine.find_tx_frames(local_filepath, 'CBW20', samp_rate, tx_mac, preamble_len, enable_equalization)
     # preamble_bounds = np.array(response['preamble_bounds']).squeeze()
     preamble_iq = np.array(response['preamble_iq']).squeeze()
     rssi = np.array(response['rssi']).squeeze()
@@ -252,7 +253,7 @@ def process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_
 
     return file_preambles
 
-def process_session(matlab_engine_queue, session_name, preamble_len, node_ids, node_macs):
+def process_session(matlab_engine_queue, session_name, preamble_len, node_ids, node_macs, enable_equalization):
     if not is_session_valid(session_name):
         print("Skipping session", session_name)
         return
@@ -270,7 +271,7 @@ def process_session(matlab_engine_queue, session_name, preamble_len, node_ids, n
         matlab_engine = matlab_engine_queue.get()
         dat_file_preambles = None
         try:
-            dat_file_preambles = process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_len)
+            dat_file_preambles = process_dat_file(matlab_engine, session_name, dat_file, node_macs, preamble_len, enable_equalization)
         except Exception as e:
             print(f"Something happened: {dat_file}")
             print(e)
@@ -292,7 +293,7 @@ def process_session(matlab_engine_queue, session_name, preamble_len, node_ids, n
             else: print(f"Insufficient frames captured: {dat_file}")
 
     # Save information for this session/epoch into a final dataset file
-    epoch_save(node_ids, RFFI_DATASET_TARGET_DIR, epoch_preambles, session_name, preamble_len)
+    epoch_save(node_ids, RFFI_DATASET_TARGET_DIR, epoch_preambles, session_name, preamble_len, enable_equalization)
 
     print(f"Session {session_name} processing is complete.")
     print("=========================================================================")
@@ -317,6 +318,7 @@ def request_mode_session():
         else: print('Invalid command.')
 
 def main():
+    enable_equalization = False
     preamble_len = request_preamble_len()
 
     # Check if a directory to store final dataset exists and create if not
@@ -355,7 +357,7 @@ def main():
             print(f"Session {session_name} already completed.")
             continue
         else: 
-            process_session(matlab_engine_queue, session_name, preamble_len, node_ids, node_macs)
+            process_session(matlab_engine_queue, session_name, preamble_len, node_ids, node_macs, enable_equalization)
 
 if __name__ == "__main__":
     main()

@@ -114,7 +114,7 @@ class ChannelIndSpectrogram():
         #         return chan_ind_spec
 
         # TODO: remove hardcoded spectrogram independence modifier
-        spec = spec[:, 1:] / spec[:, :-1]    
+        # spec = spec[:, 1:] / spec[:, :-1]    
 
         # Return logarithm of the spectrogram magnitude
         spec = np.log10(np.abs(spec)**2)

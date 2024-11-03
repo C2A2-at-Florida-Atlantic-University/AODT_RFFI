@@ -12,6 +12,6 @@ close all; clear; clc;
 % X_path = '/home/smazokha2016/Desktop/jagannath_dataset_raw/Day2WIFIwb/RASP_PI_4_80211g_OFDM_OTA_TX25_100000000aa23ddd_IQ.dat';
 X_path = '/home/smazokha2016/Desktop/wisig_raw/wifi_2021_03_01/node1-1/tx{node:node20-15}_rx{node:node1-1-rxFreq:2462e6-rxGain:0.5-capLen:0.512-rxSampRate:25e6}.dat';
 
-T = find_tx_frames(X_path, 'CBW20', 25e6, '', 400);
+T = find_tx_frames(X_path, 'CBW20', 25e6, '', 400, true);
 % T = find_tx_frames(X_path, 'CBW20', 25e6, '00:60:b3:25:bf:f5', 400);
 % T = find_tx_frames(X_path, 'CBW20', 20e6, 'na', -1);

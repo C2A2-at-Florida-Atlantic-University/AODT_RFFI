@@ -16,7 +16,7 @@ WISIG_RAW_DIR = ROOT_DIR + '/wisig_raw'
 RFFI_DATASET_TARGET_DIR = ROOT_DIR + '/wisig_dataset_new'
 MATLAB_OFDM_DECODER_DIR = ROOT_DIR + '/mobintel-rffi/preprocessor/frame_mac_detection'
 NODE_MACS_PATH = WISIG_RAW_DIR + '/experiment_device_macs.json'
-FRAME_COUNT = 1000
+FRAME_COUNT = 500
 
 COMPLETED_SESSIONS = [
     # 'wifi_2021_03_01', 
@@ -25,22 +25,35 @@ COMPLETED_SESSIONS = [
     # 'wifi_2021_03_23'
 ]
 
+# MATLAB_SESSION_NAMES = [
+#     'mobintel_session_1',
+#     'mobintel_session_2', 
+#     'mobintel_session_3', 
+#     'mobintel_session_4',
+#     'mobintel_session_5',
+#     'mobintel_session_6',
+#     'mobintel_session_7',
+#     'mobintel_session_8',
+#     'mobintel_session_9',
+#     'mobintel_session_10',
+#     'mobintel_session_11',
+#     'mobintel_session_12',
+#     'mobintel_session_13',
+#     'mobintel_session_14',
+#     'mobintel_session_15']
+
 MATLAB_SESSION_NAMES = [
-    'mobintel_session_1',
-    'mobintel_session_2', 
-    'mobintel_session_3', 
-    'mobintel_session_4',
-    'mobintel_session_5',
-    'mobintel_session_6',
-    'mobintel_session_7',
-    'mobintel_session_8',
-    'mobintel_session_9',
-    'mobintel_session_10',
-    'mobintel_session_11',
-    'mobintel_session_12',
-    'mobintel_session_13',
-    'mobintel_session_14',
-    'mobintel_session_15']
+    'MATLAB_141903',
+    'MATLAB_145113',
+    'MATLAB_147960',
+    'MATLAB_148555',
+    'MATLAB_149274',
+    'MATLAB_150131',
+    'MATLAB_150694',
+    'MATLAB_151407',
+    'MATLAB_152126',
+    'MATLAB_153276'
+]
 
 MAX_THREADS = len(MATLAB_SESSION_NAMES)
 
@@ -95,7 +108,7 @@ def save_dataset_h5(file_target, label, data, rssi):
         h5file.create_dataset('data', data=data, dtype='float64')  
 
 # Package & store epoch infromation in h5 file (ready for RFFI)
-def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preamble_len):
+def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preamble_len, enable_equalization):
     for rx_name in epoch_preambles.keys():
         rx_epochs = epoch_preambles[rx_name]
 
@@ -121,10 +134,11 @@ def epoch_save(node_ids_dict, target_dir, epoch_preambles, session_name, preambl
 
                 h5_idx = h5_idx + 1
 
-        dataset_filepath = os.path.join(target_dir, f'node{rx_name}_{session_name}.h5')
+        eq_chunk = 'eq' if enable_equalization else 'non_eq'
+        dataset_filepath = os.path.join(target_dir, f'node{rx_name}_{eq_chunk}_{session_name}.h5')
         save_dataset_h5(dataset_filepath, h5_labels, h5_data, h5_rssi)
 
-def process_dat_file(matlab_engine, dat_file, node_macs, preamble_len):
+def process_dat_file(matlab_engine, dat_file, node_macs, preamble_len, enable_equalization):
     print(f"Processing {dat_file}")
 
     # 3.1. Extract signal info from its name
@@ -141,7 +155,7 @@ def process_dat_file(matlab_engine, dat_file, node_macs, preamble_len):
     # tx_mac = '00:15:6d:84:fe:9f' # 500 devices yields ~6 devices; 1000 frames yields ~3 devices
 
     # 3.3. Decode the file via MATLAB script, extract preambles
-    response = matlab_engine.find_tx_frames(dat_file, 'CBW20', samp_rate, tx_mac, preamble_len)
+    response = matlab_engine.find_tx_frames(dat_file, 'CBW20', samp_rate, tx_mac, preamble_len, enable_equalization)
     # preamble_bounds = np.array(response['preamble_bounds']).squeeze()
     preamble_iq = np.array(response['preamble_iq']).squeeze()
     rssi = np.array(response['rssi']).squeeze()
@@ -179,7 +193,7 @@ def process_dat_file(matlab_engine, dat_file, node_macs, preamble_len):
 
     return file_preambles
 
-def process_session(matlab_engine_queue, capture_session_path, preamble_len, node_ids, node_macs):
+def process_session(matlab_engine_queue, capture_session_path, preamble_len, node_ids, node_macs, enable_equalization):
     session_name = os.path.basename(capture_session_path)
     print(f'\n\n################ PROCESSING SESSION {session_name} ################\n\n')
 
@@ -195,7 +209,7 @@ def process_session(matlab_engine_queue, capture_session_path, preamble_len, nod
         matlab_engine = matlab_engine_queue.get()
         dat_file_preambles = None
         try:
-            dat_file_preambles = process_dat_file(matlab_engine, dat_file, node_macs, preamble_len)
+            dat_file_preambles = process_dat_file(matlab_engine, dat_file, node_macs, preamble_len, enable_equalization)
         except Exception as e:
             print(f"Something happened: {dat_file}")
             print(e)
@@ -218,7 +232,7 @@ def process_session(matlab_engine_queue, capture_session_path, preamble_len, nod
             else: print(f"Insufficient frames captured: {dat_file}")
 
     # Save information for this session/epoch into a final dataset file
-    epoch_save(node_ids, RFFI_DATASET_TARGET_DIR, epoch_preambles, session_name, preamble_len)
+    epoch_save(node_ids, RFFI_DATASET_TARGET_DIR, epoch_preambles, session_name, preamble_len, enable_equalization)
 
     print(f"Session {capture_session_path} processing is complete.")
     print("=========================================================================")
@@ -254,6 +268,7 @@ def request_preamble_len():
 def main():
     # preamble_len = request_preamble_len()
     preamble_len = 400
+    enable_equalization = True
 
     # Check if a directory to store final dataset exists and create if not
     if not os.path.exists(RFFI_DATASET_TARGET_DIR):
@@ -286,7 +301,7 @@ def main():
             continue
         else: 
             capture_session_path = os.path.join(WISIG_RAW_DIR, capture_session)
-            process_session(matlab_engine_queue, capture_session_path, preamble_len, node_ids, node_macs)
+            process_session(matlab_engine_queue, capture_session_path, preamble_len, node_ids, node_macs, enable_equalization)
 
 if __name__ == "__main__":
     main()

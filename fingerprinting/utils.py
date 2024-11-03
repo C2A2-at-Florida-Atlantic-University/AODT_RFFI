@@ -5,6 +5,10 @@ import ipywidgets as widgets
 import pickle
 import hashlib
 from IPython.display import display
+from functools import reduce
+
+def intersect_n(*arrays):
+    return list(reduce(np.intersect1d, arrays))
 
 def read_dat_iq_file(file_path):
     raw_data = np.fromfile(file_path, dtype=np.float32)
