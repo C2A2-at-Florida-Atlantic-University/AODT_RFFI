@@ -80,7 +80,7 @@ class ExtractorAPI():
         data_freq = ChannelIndSpectrogram().channel_ind_spectrogram(data, model_config['row'], enable_ind=model_config['enable_ind'])
 
         # Extract fingerprints from the trained model
-        return model.predict(data_freq, verbose=0), data_freq
+        return model.predict(data_freq, verbose=0) #, data_freq
 
 # Example usage
 if __name__ == "__main__":

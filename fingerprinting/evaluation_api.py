@@ -401,14 +401,14 @@ class EvaluationAPI():
             return -1
 
         # Produce fingerprints for the epoch #1
-        fps_epoch_1, spec_epoch_1 = self.extractor_api.run(model, data_epoch_1, self.model_config)
+        fps_epoch_1 = self.extractor_api.run(model, data_epoch_1, self.model_config)
 
         # Perform the enrollment: fit a KNN classifier based on produced fingerprints
         classifier = KNeighborsClassifier(n_neighbors=k, metric='euclidean')
         classifier.fit(fps_epoch_1, np.ravel(labels_epoch_1))
 
         # Produce fingerprints for the epoch #2
-        fps_epoch_2, spec_epoch_2 = self.extractor_api.run(model, data_epoch_2, self.model_config)
+        fps_epoch_2 = self.extractor_api.run(model, data_epoch_2, self.model_config)
         labels_epoch_2_predicted = classifier.predict(fps_epoch_2)
         
         # Get the accuracy
