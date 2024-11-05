@@ -106,15 +106,9 @@ class ChannelIndSpectrogram():
                                 padded = False, boundary = None)
         spec = np.fft.fftshift(spec, axes=0)
 
-        # if enable_ind:
-        #     # Generate channel independent spectrogram.
-        #     chan_ind_spec = spec[:,1:]/spec[:,:-1]    
-        # else:
-        #     chan_ind_spec = spec[:,:]
-        #         return chan_ind_spec
-
-        # TODO: remove hardcoded spectrogram independence modifier
-        spec = spec[:, 1:] / spec[:, :-1]    
+        # If enabled, produce channel-independent spectrogram
+        if enable_ind:
+            spec = spec[:, 1:] / spec[:, :-1]
 
         # Return logarithm of the spectrogram magnitude
         spec = np.log10(np.abs(spec)**2)
@@ -134,8 +128,6 @@ class ChannelIndSpectrogram():
         # Normalize IQ samples
         data = self._normalization(data)
 
-        # TODO: hardcoded values for debugging purposes
-        row = 80 
         overlap = row * 0.9
 
         # Produce spectrogram once to dynamically determine input array dimensions

@@ -22,16 +22,6 @@ class ExtractorAPI():
         alpha = model_config['alpha']
         
         data = ChannelIndSpectrogram().channel_ind_spectrogram(data, row, enable_ind=model_config['enable_ind'])
-
-        # # Check what the first STFT window looks like, across all available frames
-        # plt.figure(figsize=(10, 8), dpi=80)
-        # sea.heatmap(data[:, :, 0, 0].squeeze())
-        # plt.show()
-
-        # # Check if all frames have similar power amount
-        # plt.figure(figsize=(10, 8), dpi=80)
-        # sea.heatmap(np.mean(data[:, :, :, 0], axis=2).squeeze())
-        # plt.show()
         
         if loss_type == 'triplet_loss': 
             netObj = TripletNet()

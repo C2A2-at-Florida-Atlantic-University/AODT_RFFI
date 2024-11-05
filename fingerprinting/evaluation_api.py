@@ -390,7 +390,7 @@ class EvaluationAPI():
 
         return fp_distances
 
-    def evaluate_closed_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, k=10, fig_path=None):
+    def evaluate_closed_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, k=10, fig_path=None):
         epoch_1_device_ids = set(labels_epoch_1.flatten())
         epoch_2_device_ids = set(labels_epoch_2.flatten())
 
@@ -401,31 +401,15 @@ class EvaluationAPI():
             return -1
 
         # Produce fingerprints for the epoch #1
-        fps_epoch_1, spec_epoch_1 = self.extractor_api.run(model, data_epoch_1, model_config)
+        fps_epoch_1, spec_epoch_1 = self.extractor_api.run(model, data_epoch_1, self.model_config)
 
         # Perform the enrollment: fit a KNN classifier based on produced fingerprints
         classifier = KNeighborsClassifier(n_neighbors=k, metric='euclidean')
         classifier.fit(fps_epoch_1, np.ravel(labels_epoch_1))
 
         # Produce fingerprints for the epoch #2
-        fps_epoch_2, spec_epoch_2 = self.extractor_api.run(model, data_epoch_2, model_config)
+        fps_epoch_2, spec_epoch_2 = self.extractor_api.run(model, data_epoch_2, self.model_config)
         labels_epoch_2_predicted = classifier.predict(fps_epoch_2)
-
-        # Check if all frames have similar power amount
-        plt.figure(figsize=(10, 8), dpi=80)
-        ax1 = sea.heatmap(np.mean(spec_epoch_1[:, :, :, 0], axis=2).squeeze())
-        # ax1 = sea.heatmap(spec_epoch_1[:, :, 0, 0].squeeze())
-        ax1.set_yticks(np.arange(0, len(labels_epoch_1), 20))
-        ax1.set_yticklabels(labels_epoch_1.flatten()[::20])
-        plt.show()
-
-        # Check if all frames have similar power amount
-        plt.figure(figsize=(10, 8), dpi=80)
-        ax2 = sea.heatmap(np.mean(spec_epoch_2[:, :, :, 0], axis=2).squeeze())
-        # ax2 = sea.heatmap(spec_epoch_2[:, :, 0, 0].squeeze())
-        ax2.set_yticks(np.arange(0, len(labels_epoch_2), 20))
-        ax2.set_yticklabels(labels_epoch_2.flatten()[::20])
-        plt.show()
         
         # Get the accuracy
         accuracy = accuracy_score(labels_epoch_2, labels_epoch_2_predicted)
