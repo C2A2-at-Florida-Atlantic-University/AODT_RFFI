@@ -82,17 +82,15 @@ class DatasetAPI():
         else: self.mateng = None
 
     def _load_dataset_v2v4(self, rx_name):
-        dataset_train_paths = [
-            os.path.join(self.dataset_v2_path, rx_name + '_training_2024-07-20_00-50-38.h5'),
-            os.path.join(self.dataset_v4_path, rx_name + '_training_2024-08-08_18-37-33.h5')
-        ]
+        dataset_train_path = os.path.join(self.dataset_v2_path, rx_name + '_training_2024-07-20_00-50-38.h5'),
         dataset_epoch_paths = [
-            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-21_06-37-08.h5'),
-            os.path.join(self.dataset_v4_path, rx_name + '_epoch_2024-08-09_09-15-25.h5')
+            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_01-15-26.h5'), # D1 E1
+            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_01-25-24.h5'), # E2
+            # os.path.join(self.dataset_v4_path, rx_name + '_epoch_2024-08-08_19-19-27.h5'), # D2 E1
         ]
         model_path = os.path.join(self.dataset_v2_path, 'my_models')
         samp_rate = 25e6
-        return dataset_train_paths, dataset_epoch_paths, model_path, samp_rate
+        return dataset_train_path, dataset_epoch_paths, model_path, samp_rate
 
     def  _load_dataset_wisig_old(self, equalized=False):
         equalized_str = 'eq' if equalized else 'non_eq'
@@ -226,8 +224,8 @@ class DatasetAPI():
             node_ids_train = self._get_dataset_devices(self.load_raw_dataset(dataset_train_path)[1], show=False)
             node_ids_epoch = self._get_dataset_devices(self.load_raw_dataset(dataset_epoch_paths[0])[1], show=False)
 
-        print(f"Devices for training: {len(node_ids_train)}")
-        print(f"Devices for testing: {len(node_ids_epoch)}")
+        # print(f"Devices for training: {len(node_ids_train)}")
+        # print(f"Devices for testing: {len(node_ids_epoch)}")
 
         return dataset_train_path, dataset_epoch_paths, model_path, node_ids_train, node_ids_epoch, samp_rate
 
@@ -443,7 +441,7 @@ class DatasetAPI():
         data, labels, rssi = self.filter_dataset(data, labels, rssi, dev_range=[device_idx], pkt_range=np.arange(frame_count))
 
         # 3. Reformat the dataset to a frame-based format
-        if rssi:
+        if rssi is not None:
             return [{'iq': iq, 'rssi': rssi_value} for iq, rssi_value in zip(data, rssi)]
         else:
             return [{'iq': iq} for iq in data]

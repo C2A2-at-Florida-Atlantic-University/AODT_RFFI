@@ -134,13 +134,13 @@ class FingerprintingAPI():
 
         return self.models, train_histories
 
-    def train_models_orbit_v2v4(self, apply_noise=False, ndays=1, augment=False, augment_cfo=False, augment_multiplier=1):
+    def train_models_mobrffi_v2v4(self, apply_noise=False, ndays=1, augment=False, augment_cfo=False, augment_multiplier=1):
         if self.data_config['dataset_name'] != DatasetAPI.DATASET_V2V4:
-            print('This function only supports the Orbit v2v4 dataset.')
+            print('This function only supports the MobRFFI v2v4 dataset.')
             return
 
-        # frames_per_device = 500
-        frames_per_device = 200
+        # frames_per_device = 500 # applicable to Day 2
+        frames_per_device = 200 # applicable to Day 1
         
         train_histories = {}
 
@@ -345,7 +345,7 @@ class FingerprintingAPI():
 
         return known_device_id
 
-    def new_signal(self, frames_rx_all, new_device_threshold, apply_noise=False, update_if_known=True):
+    def new_signal(self, frames_rx_all, new_device_threshold, apply_noise=False, update_if_known=True, return_distances=False, verbose=True):
         # 1. Initialize a list of device candidates
         device_candidates = {}
         rx_rssis = {}
@@ -381,7 +381,7 @@ class FingerprintingAPI():
 
             # 2. Aggregate all frame RPs and RSSIs (either by picking one of them, or getting a mean value)
             fp = np.mean(fps, 0)
-            rssi = np.mean(rssis) if rssis else None
+            rssi = np.mean(rssis) if rssis is not None else None
 
             # 2.1. Add the RSSI to the dictionary to weigh impact of this receiver
             if rssi: 
@@ -433,20 +433,24 @@ class FingerprintingAPI():
             else: 
                 candidate_distances[candidate_id] = np.mean([rx_distances[rx_id] for rx_id in self.rx_ids])
 
-        # 4. Are we dealing with a known device? (one of distances below threshold)
+        # 3.1. Return distance to the closest candidate
+        if return_distances:
+            return min(candidate_distances.values())
+
+        # 3.2. Are we dealing with a known device? (one of distances below threshold)
         response = {}
         if len(candidate_distances) > 0 and min(candidate_distances.values()) < new_device_threshold:
             # Which device is the closest?
             known_device_id = min(candidate_distances, key=candidate_distances.get)
             if update_if_known:
                 self._db_update_device(known_device_id, rx_fps, rx_rssis)
-            print(f"This is a known device. ID: {known_device_id}")
+            if verbose: print(f"This is a known device. ID: {known_device_id}")
             response['device_hash'] = known_device_id
             response['is_new'] = False
             response['closest_dist'] = min(candidate_distances.values())
         else: # No, this is an unknown device. Add it to all collections
             new_device_id = self._db_insert_device(rx_fps, rx_rssis)
-            print(f"This is a new device. New ID: {new_device_id}")
+            if verbose: print(f"This is a new device. New ID: {new_device_id}")
             response['device_hash'] = new_device_id
             response['is_new'] = True
             if len(candidate_distances.values()) > 0:
