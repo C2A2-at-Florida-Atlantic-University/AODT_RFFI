@@ -19,18 +19,22 @@ class ExtractorAPI():
         batch_size = model_config['batch_size']
         row = model_config['row']
         loss_type = model_config['loss_type']
-        alpha = model_config['alpha']
         
         data = ChannelIndSpectrogram().channel_ind_spectrogram(data, row, enable_ind=model_config['enable_ind'])
         
         if loss_type == 'triplet_loss': 
+            alpha = model_config['alpha']
+
             netObj = TripletNet()
             feature_extractor = netObj.feature_extractor(data.shape)
             net = netObj.create_net(feature_extractor, alpha=alpha)
         elif loss_type == 'quadruplet_loss': 
+            alpha = model_config['alpha']
+            beta = model_config['beta'] if 'beta' in model_config else 0
+
             netObj = QuadrupletNet()
             feature_extractor = netObj.feature_extractor(data.shape)
-            net = netObj.create_net(feature_extractor, alpha1=alpha, alpha2=alpha/3)
+            net = netObj.create_net(feature_extractor, alpha1=alpha, alpha2=beta)
         else: 
             print('Invalid loss type.')
             return None

@@ -84,9 +84,9 @@ class DatasetAPI():
     def _load_dataset_v2v4(self, rx_name):
         dataset_train_path = os.path.join(self.dataset_v2_path, rx_name + '_training_2024-07-20_00-50-38.h5'),
         dataset_epoch_paths = [
-            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_01-15-26.h5'), # D1 E1
-            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_01-25-24.h5'), # E2
-            # os.path.join(self.dataset_v4_path, rx_name + '_epoch_2024-08-08_19-19-27.h5'), # D2 E1
+            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_01-15-26.h5'), # day 1, epoch 1
+            os.path.join(self.dataset_v4_path, rx_name + '_epoch_2024-08-08_19-19-27.h5'), # day 2, epoch 2
+            os.path.join(self.dataset_v2_path, rx_name + '_epoch_2024-07-20_02-05-44.h5'), # day 1, epoch 2 (note: sometimes, this needs to be commented out)
         ]
         model_path = os.path.join(self.dataset_v2_path, 'my_models')
         samp_rate = 25e6
@@ -114,7 +114,7 @@ class DatasetAPI():
             os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_15', f"node1-1_{equalized_str}_wifi_2021_03_15.h5"),
             os.path.join(self.dataset_wisig_new_path, 'wisig_dataset-2021_03_23', f"node1-1_{equalized_str}_wifi_2021_03_23.h5")
         ]
-        model_path = os.path.join(self.dataset_wisig_old_path, 'my_models')
+        model_path = os.path.join(self.dataset_wisig_new_path, 'my_models')
         samp_rate = 25e6
         return dataset_paths, model_path, samp_rate
 

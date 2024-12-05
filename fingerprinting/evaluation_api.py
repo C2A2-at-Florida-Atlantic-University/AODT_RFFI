@@ -316,6 +316,9 @@ class EvaluationAPI():
         x_ticks_vals = np.arange(0, len(epoch_timestamps), 20)
         x_ticks_labels = [utils.convert_ms_to_time_label(timestamp) for timestamp in np.array(epoch_timestamps)[x_ticks_vals] - epoch_timestamps[0]]
 
+        stds = []
+        vars = []
+
         for node_i, fp_map in enumerate(fp_maps):
             tx_node_name = f"#{tx_node_names[node_i]}"
             tx_node_fp_distances = fp_map[node_i, :]
@@ -324,6 +327,13 @@ class EvaluationAPI():
             y_ticks_labels.append(tx_node_name)
 
             plt.plot(tx_node_fp_distances + node_i, label=tx_node_name, color='black')
+
+            stds.append(np.std(tx_node_fp_distances))
+            vars.append(np.var(tx_node_fp_distances))
+
+            print(f'{tx_node_name}: STD[{np.std(tx_node_fp_distances)}] VAR[{np.var(tx_node_fp_distances)}]')
+
+        print(f"Min: {np.round(np.min(stds) * 100, 2)}%, Max: {np.round(np.max(stds) * 100, 2)}%, Mean: {np.round(np.mean(stds) * 100, 2)}%")
 
         plt.yticks(ticks=y_ticks_vals, labels=y_ticks_labels)
         plt.xticks(ticks=x_ticks_vals, labels=x_ticks_labels)
@@ -375,11 +385,10 @@ class EvaluationAPI():
 
         # Create a figure with two subplots side by side
         utils.apply_ieee_style()
-        plt.figure(figsize=(10, 3))
-        plt.plot(fp_distances[:, 0], color='blue')#, label="Device with Similarity Rank 1")
-        plt.plot(fp_distances[:, 1], color='red')#, label="Device with Similarity Rank 2")
-        plt.plot([0, len(fp_distances)-1], [fp_threshold, fp_threshold], color="black", linestyle="--")#, label="Binary Classification Threshold")
-        plt.plot([], [], ' ', label=f"Threshold Gap: {round(threshold_gap, 2)}")
+        plt.figure(figsize=(8, 2), dpi=300)
+        plt.plot(fp_distances[:, 0], color='black')
+        plt.plot(fp_distances[:, 1], color='blue')
+        plt.plot([0, len(fp_distances)-1], [fp_threshold, fp_threshold], color="grey", linestyle="--", label=f'Threshold: {round(threshold_gap, 2)}')
         # plt.ylim(0, 0.8)
         plt.legend(loc='lower left', bbox_to_anchor=(0, 0))
         plt.xticks(ticks=range(len(node_ids_epoch)), labels=[f"#{item}" for item in node_ids_epoch])
@@ -616,6 +625,7 @@ class EvaluationAPI():
             _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
             data, labels, rssi = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epochs_idx_identify], shuffle=False)
             data, labels, rssi = self.dataset_api.filter_dataset(data, labels, rssi, dev_range=identify_device_idx, pkt_range=np.arange(frame_count_identify))
+            data = data[:, 0:self.data_config['samples_count']]
             rx_datasets[rx_id] = {
                 'data': data,
                 'labels': labels,
@@ -626,7 +636,7 @@ class EvaluationAPI():
         for device_id in identify_device_idx:
             print(f"E{epochs_idx_identify}. Identifying a device: {grid_node_coordinates[device_id]}")
 
-            for test in range(frame_count_identify):
+            for test in np.arange(0, frame_count_identify):
                 print('|', end='')
                 input = {}
                 for rx_id in rx_ids:
@@ -638,33 +648,11 @@ class EvaluationAPI():
                     else:
                         input[rx_id] = [{'iq': rx_data}]
 
-                reidentification_response = self.fp_api.new_signal(input, new_device_threshold=identify_threshold, return_distances=False)
+                reidentification_response = self.fp_api.new_signal(input, new_device_threshold=identify_threshold, return_distances=False, verbose=False)
 
                 true_labels.append(device_id)
                 pred_labels.append(hash_to_id[reidentification_response['device_hash']])
             print()
-
-        # for epoch_idx in epochs_idx_identify:
-        #     print(f"Epoch {epoch_idx}")
-        #     for device_id in identify_device_idx:
-        #         # try:
-        #         enrolled_device_hash = enrolled_device_map[device_id]['device_hash']
-        #         print(f"E{epoch_idx}. Identifying device: {grid_node_coordinates[device_id]}. Expected hash: {enrolled_device_hash}")
-
-        #         # Retrieve frames (across all receivers) for a given device
-        #         frames_rx_all = {}
-        #         for rx_id in rx_ids:
-        #             _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-        #             frames_rx_all[rx_id] = self.dataset_api.load_testing_input(dataset_epoch_paths, epoch_idx=epoch_idx, device_idx=device_id, frame_count=frame_count_identify)
-
-        #         # Process new signal
-        #         reidentification_response = self.fp_api.new_signal(frames_rx_all, new_device_threshold=identify_threshold)
-
-        #         true_labels.append(device_id)
-        #         pred_labels.append(hash_to_id[reidentification_response['device_hash']])
-        #         # except Exception as e:
-        #         #     print(f"Failed to identify device {device_id}: {e}")
-        #         #     print(traceback.format_exc())
 
         true_labels = np.array(true_labels)
         pred_labels = np.array(pred_labels)
@@ -726,6 +714,7 @@ class EvaluationAPI():
             _, dataset_epoch_paths, _, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
             data, labels, rssi = self.dataset_api.load_raw_dataset(dataset_epoch_paths[epochs_idx_identify], shuffle=False)
             data, labels, rssi = self.dataset_api.filter_dataset(data, labels, rssi, dev_range=identify_device_idx, pkt_range=np.arange(frame_count_identify))
+            data = data[:, 0:self.data_config['samples_count']]
             rx_datasets[rx_id] = {
                 'data': data,
                 'labels': labels,
@@ -736,7 +725,7 @@ class EvaluationAPI():
         for device_id in identify_device_idx:
             print(f"E{epochs_idx_identify}. Identifying a device: {grid_node_coordinates[device_id]}")
 
-            for test in range(frame_count_identify):
+            for test in np.arange(0, frame_count_identify):
                 print('|', end='')
                 input = {}
                 for rx_id in rx_ids:
@@ -773,7 +762,7 @@ class EvaluationAPI():
         if fig_path: plt.savefig(fig_path, format='eps', bbox_inches='tight', pad_inches=0.1)
         plt.show()
 
-        # return {'true_labels': true_labels, 'pred_labels': pred_labels}
+        return fpr, tpr
 
 if __name__ == "__main__":
     print("Please refer to the primary workbook or the README for tutorial on how to use this class.")

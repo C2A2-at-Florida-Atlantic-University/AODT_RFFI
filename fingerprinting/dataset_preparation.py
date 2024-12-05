@@ -100,7 +100,7 @@ class ChannelIndSpectrogram():
         return data_normalized        
 
     def _channel_ind_spectrogram_single(self, frame, win_len, overlap, enable_ind=True):
-        _, _, spec = signal.stft(frame, window = 'boxcar', 
+        _, t, spec = signal.stft(frame, window = 'boxcar', 
                                 nperseg = win_len, noverlap = overlap, 
                                 nfft = win_len, return_onesided = False, 
                                 padded = False, boundary = None)
@@ -116,7 +116,7 @@ class ChannelIndSpectrogram():
         # NEW: Apply standardization to obtain more spectrogram consistency
         spec = self._standardization(spec)
 
-        return spec
+        return t, spec
 
     def _standardization(self, spec):
         mean = spec.mean()
@@ -124,30 +124,26 @@ class ChannelIndSpectrogram():
         spec = (spec - mean) / std
         return spec
 
-    def channel_ind_spectrogram(self, data, row, enable_ind):
+    def channel_ind_spectrogram(self, data, row, enable_ind, overlap_coef = 0.9, remove_subcarriers=True, return_spec_t=False):
         # Normalize IQ samples
         data = self._normalization(data)
 
-        overlap = row * 0.9
+        overlap = row * overlap_coef
 
         # Produce spectrogram once to dynamically determine input array dimensions
-        test_run = self._channel_ind_spectrogram_single(data[0], win_len=row, overlap=overlap, enable_ind=enable_ind)
+        t, test_run = self._channel_ind_spectrogram_single(data[0], win_len=row, overlap=overlap, enable_ind=enable_ind)
 
         # Convert each packet (IQ samples) to a channel independent spectrogram.
         data_spectrograms = np.zeros([data.shape[0], test_run.shape[0], test_run.shape[1], 1])
 
         # Run STFT for each frame separately
         for i in np.arange(data.shape[0]):
-            data_spectrograms[i,:,:,0] = self._channel_ind_spectrogram_single(data[i], win_len=row, overlap=overlap, enable_ind=enable_ind)
+            _, spec = self._channel_ind_spectrogram_single(data[i], win_len=row, overlap=overlap, enable_ind=enable_ind)
+            data_spectrograms[i,:,:,0] = spec
 
-        # TODO: determine whether chopping off spectrogram sections is a good idea
-        # Remove bands that don't contain useful information
-        # remove_bands = list(np.arange(0, 14)) + [16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64] + list(np.arange(67, 80))
-        remove_bands = list(range(0, 14)) + [40] + list(range(67, 80))
-        # remove_windows = list(range(72, 132)) + list(range(230, 321))
-        data_spectrograms = np.delete(data_spectrograms, remove_bands, axis=1)
-        # data_spectrograms = np.delete(data_spectrograms, remove_windows, axis=2)
+        if remove_subcarriers:
+            guards = list(range(0, 14)) + [40] + list(range(67, 80))
+            data_spectrograms = np.delete(data_spectrograms, guards, axis=1)
 
-        # sea.heatmap(data_spectrograms[0, :, :, 0])
-
-        return data_spectrograms
+        if return_spec_t: return data_spectrograms, t
+        else: return data_spectrograms

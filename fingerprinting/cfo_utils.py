@@ -32,6 +32,10 @@ def coarse_cfo_estimate(stf, fs):
     use_idx = [int(i) for i in offset + np.arange(min(S, N-offset))]
     use = stf[use_idx]
     foffset = cfo_estimate(use, M) * fs / M
+
+    if abs(foffset) > fs/2:  # Nyquist limit
+        print(f"CFO estimate ({foffset}) exceeds Nyquist frequency")
+
     return foffset
 
 def fine_cfo_estimate(ltf, fs):

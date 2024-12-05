@@ -6,6 +6,7 @@ import pickle
 import hashlib
 from IPython.display import display
 from functools import reduce
+from sklearn.metrics import roc_curve, auc, confusion_matrix, accuracy_score
 
 def intersect_n(*arrays):
     return list(reduce(np.intersect1d, arrays))
@@ -103,6 +104,27 @@ def convert_ms_to_time_label(unix_timestamp_ms):
         return f'{minutes}m'
     else:
         return f'{seconds}s'
+
+def plot_roc_curves(roc_curves, figtitle=None):
+    lw = 4
+    apply_ieee_style()
+    plt.figure(figsize=(9, 10), dpi=300)
+    plt.rcParams.update({"font.size": 30})
+    for roc_curve in roc_curves:
+        fpr = roc_curve['fpr']
+        tpr = roc_curve['tpr']
+        label = roc_curve['info']
+        auc_score = auc(fpr, tpr)
+        plt.plot(fpr, tpr, label=f'AUC: {auc_score*100:.2f}%', linewidth=lw)
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    if figtitle is not None: plt.title(figtitle)
+    plt.legend(loc="lower right")
+    plt.grid(True)
+    plt.show()
 
 def hash_object(obj):
     # Serialize the object with pickle
