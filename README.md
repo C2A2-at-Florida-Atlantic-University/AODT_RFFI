@@ -31,10 +31,9 @@ Thank you for exploring our project! If you found this useful, please consider c
 ![](https://i.giphy.com/media/v1.Y2lkPTc5MGI3NjExeG1zM3RhM3ozY3J1MDNrM2xwcHRxYm9xZDhzNWU1eGcwdDNoeWphbiZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/1rFPUD5ZFpc7bVYWk6/giphy.gif)
 
 ```bibtex
-@article{mazokha2024rffi,
-  title={RFFI for Mobility Intelligence and MAC Address Derandomization},
+@article{mazokha2025mobrffi,
+  title={MobRFFI: Non-cooperative Device Re-identification for Mobility Intelligence},
   author={Mazokha, Stepan and Bao, Fanchen and Sklivanitis, George and Hallstrom, Jason O},
-  journal={TBD},
-  year={2024},
-  publisher={TBD}
+  journal={arXiv preprint arXiv:2503.02156},
+  year={2025}
 }
