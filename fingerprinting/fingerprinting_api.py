@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from scipy.spatial import distance
-import utils
 from dataset_preparation import awgn
 from dataset_api import DatasetAPI
 from extractor_api import ExtractorAPI
@@ -105,210 +104,44 @@ class FingerprintingAPI():
         plt.show()
 
     def train_models(self, apply_noise=False):
-        train_histories = {}
-
-        for rx_id in self.rx_ids:
-            dataset_train_path, _, model_path, node_ids_train, _, samp_rate = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-
-            # Retrieve (and optionally augment) the data to produce data, label variables
-            if self.aug_on:
-                data, label, _ = self.dataset_api.load_augmented_dataset(dataset_train_path, samp_rate, self.aug_config, shuffle=False)
-            else:
-                data, label, _ = self.dataset_api.load_raw_dataset(dataset_train_path, shuffle=True)
-
-            data, label, _ = self.dataset_api.filter_dataset(data, label, _, node_ids_train, np.arange(0, self.data_config['frame_count_train']))
-            data, label, _ = self.dataset_api._shuffle_dataset(data, label, _)
-            data = data[:, 0:self.data_config['samples_count']] # keep only a specified number of samples (usually, preamble length)
-
-            # Add AWGN
-            if apply_noise:
-                data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
-
-            # Train the model
-            model_save_path = os.path.join(model_path, f"extractor_{rx_id}.keras")
-
-            feature_extractor, history = self.extractor_api.train(data, label, node_ids_train, self.model_config, save_path=model_save_path)
-
-            train_histories[rx_id] = history
-            self.models[rx_id] = feature_extractor
-
-        return self.models, train_histories
-
-    def train_models_mobrffi_v2v4(self, apply_noise=False, ndays=1, augment=False, augment_cfo=False, augment_multiplier=1):
-        if self.data_config['dataset_name'] != DatasetAPI.DATASET_V2V4:
-            print('This function only supports the MobRFFI v2v4 dataset.')
-            return
-
-        # frames_per_device = 500 # applicable to Day 2
-        frames_per_device = 200 # applicable to Day 1
-        
-        train_histories = {}
-
-        for rx_id in self.rx_ids:
-            dataset_train_paths, _, model_path, node_ids_train, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-
-            data = np.zeros((0, self.data_config['samples_count']), dtype=complex)
-            labels = np.zeros((0, 1))
-                
-            print(f"Training the model using data from {ndays} days.")
-            for day in range(ndays):
-                # day=1
-                data_day, labels_day, _ = self.dataset_api.load_raw_dataset(dataset_train_paths[day], shuffle=False)
-                print(f'Data raw: {data_day.shape}')
-
-                print(sorted(list(set(labels_day.flatten()))))
-                print(sorted(node_ids_train))
-
-                data_day, labels_day, _ = self.dataset_api.filter_dataset(data_day, labels_day, None, node_ids_train, np.arange(frames_per_device))
-                data_day = data_day[:, 0:self.data_config['samples_count']]
-                print(f'Data after filtering: {data_day.shape}')
-
-                # Augment the dataset:
-                # - multiply the dataset (replicate the same data)
-                # - augment CFO (add randomly generated CFO values; only applicable if we actually removed CFO prior to that)
-                if augment:
-                    data_day, labels_day, _ = self.dataset_api.augment_dataset(data_day, labels_day, None, augment_cfo=augment_cfo, multiplier=augment_multiplier)
-                    print(f'Data after augmentation: {data_day.shape}')
-
-                # Add day's data to the unified arrays
-                data = np.concatenate((data, data_day), axis=0)
-                labels = np.concatenate((labels, labels_day), axis=0)
-
-            print(f'Final data: {data.shape}')
-
-            if apply_noise:
-                data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
-
-            # Train the model
-            model_save_path = os.path.join(model_path, f"extractor_{rx_id}.keras")
-            feature_extractor, history = self.extractor_api.train(data, labels, node_ids_train, self.model_config, save_path=model_save_path)
-            train_histories[rx_id] = history
-            self.models[rx_id] = feature_extractor
-
-        return self.models, train_histories
-
-    def train_models_wisig_old(self, apply_noise=False, ndays=1, equalized=False, compensate_cfo=False, augment=False, augment_cfo=False, augment_multiplier=1):
-        if self.data_config['dataset_name'] != DatasetAPI.DATASET_WISIG_OLD:
-            print('This function only supports old Wisig dataset.')
-            return
-
-        train_split, test_split = [0.8, 0.2] # we keep 400 frames for training and 100 frames for testing
-        # train_split, test_split = [1.0, 0.0] # take all 500 frames for testing (just for confirming accuracy)
-        frames_per_device = 500
+        if self.data_config['dataset_name'] != DatasetAPI.DATASET_AODT_HF:
+            raise ValueError(
+                "This cleaned pipeline is HF-only. Set data_config['dataset_name'] to DatasetAPI.DATASET_AODT_HF."
+            )
 
         train_histories = {}
+        data, label, _, _, _, _, node_ids_train, _ = self.dataset_api.load_hf_train_test(
+            self.data_config, shuffle_train=True, shuffle_test=False
+        )
+        data = data[:, 0:self.data_config['samples_count']]
+
+        if apply_noise:
+            data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
+
+        model_dir = self.data_config.get('model_path', os.path.join(self.dataset_api.root_dir, 'aodt_hf_models'))
+        os.makedirs(model_dir, exist_ok=True)
 
         for rx_id in self.rx_ids:
-            dataset_train_paths, dataset_test_paths, model_path, node_ids_train, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None, wisig_equalized=equalized)
-
-            data = np.zeros((0, self.data_config['samples_count']), dtype=complex)
-            labels = np.zeros((0, 1))
-                
-            print(f"Training the model using data from {ndays} days.")
-            for day in range(ndays):
-                # Retrieve data and labels for a given day (combine training and testing data)
-                data_day, label_day, _ = self.dataset_api.load_raw_dataset_wisig(dataset_train_paths[day], dataset_test_paths[day], shuffle=False)
-                print(f'Data raw: {data_day.shape}')
-
-                # Filter and keep only the device IDs and frames that we decided to use for training
-                data_day, label_day, _ = self.dataset_api.filter_dataset(data_day, label_day, None, node_ids_train, np.arange(0, int(frames_per_device * train_split)))
-                print(f'Data after filtering: {data_day.shape}')
-
-                # Filter the dataset (pick specified nodes & frames)
-                data_day = data_day[:, 0:self.data_config['samples_count']]
-
-                # Augment the dataset:
-                # - multiply the dataset (replicate the same data)
-                # - augment CFO (add randomly generated CFO values; only applicable if we actually removed CFO prior to that)
-                if augment:
-                    data_day, label_day, _ = self.dataset_api.augment_dataset(data_day, label_day, None, augment_cfo=augment_cfo, multiplier=augment_multiplier)
-                    print(f'Data after augmentation: {data_day.shape}')
-
-                # Add day's data to the unified arrays
-                data = np.concatenate((data, data_day), axis=0)
-                labels = np.concatenate((labels, label_day), axis=0)
-
-            print(f'Final data: {data.shape}')
-            
-            if apply_noise:
-                data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
-
-            # Train the model
-            model_save_path = os.path.join(model_path, f"extractor_{rx_id}.keras")
-            feature_extractor, history = self.extractor_api.train(data, labels, node_ids_train, self.model_config, save_path=model_save_path)
-            train_histories[rx_id] = history
-            self.models[rx_id] = feature_extractor
-
-        return self.models, train_histories
-
-    def train_models_wisig_new(self, apply_noise=False, ndays=1, equalized=False, compensate_cfo=False, augment=False, augment_cfo=False, augment_multiplier=1):
-        if self.data_config['dataset_name'] != DatasetAPI.DATASET_WISIG_NEW:
-            print('This function only supports new Wisig dataset.')
-            return
-
-        train_split, test_split = [0.8, 0.2] # we keep 400 frames for training and 100 frames for testing
-        # train_split, test_split = [1.0, 0.0] # take all 500 frames for testing (just for confirming accuracy)
-        frames_per_device = 500
-
-        train_histories = {}
-
-        for rx_id in self.rx_ids:
-            dataset_paths, model_path, node_ids_train, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None, wisig_equalized=equalized)
-
-            data = np.zeros((0, self.data_config['samples_count']), dtype=complex)
-            labels = np.zeros((0, 1))
-                
-            print(f"Training the model using data from {ndays} days.")
-            for day in range(ndays):
-                # Retrieve data and labels for a given day
-                data_day, label_day, _ = self.dataset_api.load_raw_dataset(dataset_paths[day], shuffle=False)
-                print(f'Data raw: {data_day.shape}')
-
-                # Filter and keep only the device IDs and frames that we decided to use for training
-                data_day, label_day, _ = self.dataset_api.filter_dataset(data_day, label_day, None, node_ids_train, np.arange(0, int(frames_per_device * train_split)))
-                print(f'Data after filtering: {data_day.shape}')
-
-                # Filter the dataset (pick specified nodes & frames)
-                data_day = data_day[:, 0:self.data_config['samples_count']]
-
-                # Augment the dataset:
-                # - multiply the dataset (replicate the same data)
-                # - augment CFO (add randomly generated CFO values; only applicable if we actually removed CFO prior to that)
-                if augment:
-                    data_day, label_day, _ = self.dataset_api.augment_dataset(data_day, label_day, None, augment_cfo=augment_cfo, multiplier=augment_multiplier)
-                    print(f'Data after augmentation: {data_day.shape}')
-
-                # Add day's data to the unified arrays
-                data = np.concatenate((data, data_day), axis=0)
-                labels = np.concatenate((labels, label_day), axis=0)
-
-            print(f'Final data: {data.shape}')
-            
-            if apply_noise:
-                data = awgn(data, np.arange(self.aug_config['awgn'][0][0], self.aug_config['awgn'][0][1]))
-
-            # Train the model
-            model_save_path = os.path.join(model_path, f"extractor_{rx_id}.keras")
-            feature_extractor, history = self.extractor_api.train(data, labels, node_ids_train, self.model_config, save_path=model_save_path)
+            model_save_path = os.path.join(model_dir, f"extractor_{rx_id}.keras")
+            feature_extractor, history = self.extractor_api.train(
+                data, label, node_ids_train, self.model_config, save_path=model_save_path
+            )
             train_histories[rx_id] = history
             self.models[rx_id] = feature_extractor
 
         return self.models, train_histories
 
     def load_models(self):
-        for rx_id in self.rx_ids:
-            _, _, model_path, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None)
-            self.models[rx_id] = self.extractor_api.load(os.path.join(model_path, f"extractor_{rx_id}.keras"), compile=False)
-        return self.models
+        if self.data_config['dataset_name'] != DatasetAPI.DATASET_AODT_HF:
+            raise ValueError(
+                "This cleaned pipeline is HF-only. Set data_config['dataset_name'] to DatasetAPI.DATASET_AODT_HF."
+            )
 
-    def load_models_wisig(self, is_new_dataset=False, equalized=False):
+        model_dir = self.data_config.get('model_path', os.path.join(self.dataset_api.root_dir, 'aodt_hf_models'))
         for rx_id in self.rx_ids:
-            if is_new_dataset:
-                _, model_path, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None, wisig_equalized=equalized)
-            else:
-                _, _, model_path, _, _, _ = self.dataset_api.load_dataset_info(self.data_config['dataset_name'], rx_id, None, wisig_equalized=equalized)
-
-            self.models[rx_id] = self.extractor_api.load(os.path.join(model_path, f"extractor_{rx_id}.keras"), compile=False)
+            self.models[rx_id] = self.extractor_api.load(
+                os.path.join(model_dir, f"extractor_{rx_id}.keras"), compile=False
+            )
         return self.models
 
     def _db_insert_device(self, rx_fps, rx_rssis):

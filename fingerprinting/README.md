@@ -4,10 +4,33 @@ This is the crown jewel of this project. This subdirectory contains all the sour
 
 For detailed description of how this code works, please refer to our paper.
 
-## How to run:
+## Status
 
-You have two choices of how to use this repository: 
+This fork is now cleaned to focus on **AODT Hugging Face data only** for training/testing TripletNet-based fingerprinting.
 
-1. Explore our fingerprinting demo workflow: [Fingerprinting Workflow](fp_demo.ipynb)
+## AODT Hugging Face pipeline (TripletNet)
 
-2. Reproduce figures from our paper: [Evaluation Workflow](evaluation_demo.ipynb)
+This fork also supports training/testing the fingerprint extractor directly from AODT PUSCH IQ datasets hosted on Hugging Face (as produced by `AODT_IQ_Collection/pusch_iq_dataset/build_hf_dataset.py`).
+
+Use `DatasetAPI.DATASET_AODT_HF` and provide HF config in `data_config`, for example:
+
+```python
+data_config = {
+    "dataset_name": DatasetAPI.DATASET_AODT_HF,
+    "samples_count": 400,
+    "hf_repo_id": "your-org/your-aodt-dataset",
+    "hf_train_split": "train",
+    "hf_test_split": "train",   # same split + ratio split if no test split exists
+    "hf_train_ratio": 0.8,
+    "hf_label_column": "rnti",
+    "hf_rx_ant": 0,
+    "hf_sym_mode": "flatten",   # flatten | first_sym | mean_sym
+    "model_path": "/tmp/aodt_hf_models",
+}
+```
+
+Then:
+- train with `FingerprintingAPI.train_models(...)`
+- test with `EvaluationAPI.evaluate_aodt_hf_closed_set(...)`
+
+Legacy Orbit/WiSig local file loaders and evaluation flows are disabled in this cleaned branch.
