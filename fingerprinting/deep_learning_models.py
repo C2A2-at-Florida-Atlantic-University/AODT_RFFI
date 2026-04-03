@@ -14,27 +14,24 @@ tf.random.set_seed(seed_value)
 
 from tensorflow.keras import backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Lambda, ReLU, Add, Dense, Conv2D, Flatten, AveragePooling2D
+from tensorflow.keras.layers import (
+    Input,
+    Lambda,
+    ReLU,
+    Add,
+    Dense,
+    Conv2D,
+    Flatten,
+    AveragePooling2D,
+    Dropout,
+    BatchNormalization,
+    Reshape,
+    Permute,
+    LayerNormalization,
+    Bidirectional,
+    GRU,
+)
 from tensorflow.keras import initializers
-
-# Set the seed value for reproducibility
-seed_value = 42
-
-# 1. Set `PYTHONHASHSEED` environment variable at a fixed value
-os.environ['PYTHONHASHSEED'] = str(seed_value)
-
-# 2. Set `python` built-in pseudo-random generator at a fixed value
-random.seed(seed_value)
-
-# 3. Set `numpy` pseudo-random generator at a fixed value
-np.random.seed(seed_value)
-
-# 4. Set `tensorflow` pseudo-random generator at a fixed value
-tf.random.set_seed(seed_value)
-
-# 5. Force TensorFlow to use deterministic algorithms
-os.environ['TF_DETERMINISTIC_OPS'] = '1'
-os.environ['TF_CUDNN_DETERMINISTIC'] = '1'
 
 def resblock(x, kernelsize, filters, first_layer=False, seed=None):
     kernel_init = initializers.glorot_uniform(seed=seed)
@@ -136,7 +133,10 @@ class TripletNet():
         """Generate a triplets generator for training."""
         self.data = data
         self.label = label
-        self.dev_range = dev_range
+        # Use labels present in this split to avoid empty-class sampling.
+        self.dev_range = np.unique(self.label)
+        if len(self.dev_range) < 2:
+            raise ValueError("Triplet training requires at least 2 labels in the current split.")
         
         while True:
             list_a = []
@@ -161,9 +161,81 @@ class TripletNet():
             # generator -> tf.data conversion (lists trigger TypeSpec errors).
             yield (A, P, N), label
 
-class QuadrupletNet():
+
+class RNNTripletNet(TripletNet):
+    """TripletNet with an RNN encoder over spectrogram time bins."""
+
+    def __init__(
+        self,
+        seed=42,
+        gru_units=256,
+        dropout=0.3,
+        recurrent_dropout=0.0,
+        bidirectional=True,
+        num_layers=2,
+        embedding_dim=512,
+    ):
+        super().__init__(seed=seed)
+        self.gru_units = gru_units
+        self.dropout = dropout
+        self.recurrent_dropout = recurrent_dropout
+        self.bidirectional = bidirectional
+        self.num_layers = num_layers
+        self.embedding_dim = embedding_dim
+
+    def feature_extractor(self, datashape):
+        self.datashape = datashape
+        f_bins, t_steps, channels = self.datashape[1], self.datashape[2], self.datashape[3]
+        inputs = Input(shape=(f_bins, t_steps, channels))
+
+        # Normalize then use a light conv stem before sequence modeling.
+        x = LayerNormalization(axis=[1, 2, 3], epsilon=1e-6, name="rnn_triplet_input_norm")(inputs)
+        x = Conv2D(64, kernel_size=(3, 3), strides=(2, 1), padding="same", use_bias=False, name="rnn_triplet_conv1")(x)
+        x = BatchNormalization(name="rnn_triplet_conv1_bn")(x)
+        x = ReLU(name="rnn_triplet_conv1_relu")(x)
+        x = Dropout(self.dropout * 0.5, name="rnn_triplet_conv1_dropout")(x)
+        x = Conv2D(64, kernel_size=(3, 3), strides=(1, 1), padding="same", use_bias=False, name="rnn_triplet_conv2")(x)
+        x = BatchNormalization(name="rnn_triplet_conv2_bn")(x)
+        x = ReLU(name="rnn_triplet_conv2_relu")(x)
+
+        # Convert conv feature map to sequence: (time, features_per_timestep).
+        f_red = int(x.shape[1])
+        t_red = int(x.shape[2])
+        c_red = int(x.shape[3])
+        x = Permute((2, 1, 3))(x)
+        x = Reshape((t_red, f_red * c_red))(x)
+        x = LayerNormalization(axis=-1, epsilon=1e-6, name="rnn_triplet_step_norm")(x)
+
+        for i in range(self.num_layers):
+            return_sequences = i < (self.num_layers - 1)
+            gru = GRU(
+                self.gru_units,
+                return_sequences=return_sequences,
+                dropout=self.dropout,
+                recurrent_dropout=self.recurrent_dropout,
+                reset_after=True,
+                name=f"rnn_triplet_gru_{i+1}",
+            )
+            if self.bidirectional:
+                x = Bidirectional(gru, name=f"rnn_triplet_bi_gru_{i+1}")(x)
+            else:
+                x = gru(x)
+            if return_sequences:
+                x = LayerNormalization(name=f"rnn_triplet_gru_ln_{i+1}")(x)
+
+        hidden_dim = self.gru_units * 2 if self.bidirectional else self.gru_units
+        x = Dense(hidden_dim, activation="relu", name="rnn_triplet_projection")(x)
+        x = Dropout(self.dropout, name="rnn_triplet_projection_dropout")(x)
+        x = Dense(self.embedding_dim, name="rnn_triplet_embedding")(x)
+        outputs = Lambda(lambda t: K.l2_normalize(t, axis=1), name="rnn_triplet_l2norm")(x)
+
+        model = Model(inputs=inputs, outputs=outputs, name="RNN_Triplet_Encoder")
+        return model
+
+
+class QuadrupletNet(TripletNet):
     def __init__(self, seed=42):
-        self.rng = np.random.RandomState(seed)
+        super().__init__(seed=seed)
         
     def create_net(self, embedding_net, alpha1, alpha2):
         self.alpha1 = alpha1
@@ -200,31 +272,6 @@ class QuadrupletNet():
 
         return K.mean(loss1 + loss2 + loss3)
 
-    def feature_extractor(self, datashape):
-        self.datashape = datashape
-        input_shape = [self.datashape[1], self.datashape[2], self.datashape[3]]
-        inputs = Input(shape=input_shape)
-        
-        kernel_init = initializers.glorot_uniform(seed=seed_value)
-        x = Conv2D(32, 7, strides=2, activation='relu', padding='same', kernel_initializer=kernel_init)(inputs)
-        
-        x = resblock(x, 3, 32, seed=seed_value)
-        x = resblock(x, 3, 32, seed=seed_value)
-
-        x = resblock(x, 3, 64, first_layer=True, seed=seed_value)
-        x = resblock(x, 3, 64, seed=seed_value)
-
-        x = AveragePooling2D(pool_size=2)(x)
-        
-        x = Flatten()(x)
-    
-        x = Dense(512, kernel_initializer=kernel_init)(x)
-  
-        outputs = Lambda(lambda x: K.l2_normalize(x, axis=1))(x)
-        
-        model = Model(inputs=inputs, outputs=outputs)
-        return model             
-
     def get_quadruplet(self):
         """Choose a quadruplet (anchor, positive, negative1, negative2) of images
         such that anchor and positive have the same label and
@@ -244,19 +291,15 @@ class QuadrupletNet():
         n2 = self.call_sample(n2_label)
 
         return a, p, n1, n2
-          
-    def call_sample(self, label_name):
-        """Choose an image from our training or test data with the
-        given label."""
-        indices = np.where(self.label == label_name)[0]
-        idx = self.rng.choice(indices)
-        return self.data[idx]
 
     def create_generator(self, batchsize, dev_range, data, label):
         """Generate a quadruplets generator for training."""
         self.data = data
         self.label = label
-        self.dev_range = dev_range
+        # Use labels present in this split to avoid empty-class sampling.
+        self.dev_range = np.unique(self.label)
+        if len(self.dev_range) < 3:
+            raise ValueError("Quadruplet training requires at least 3 labels in the current split.")
         
         while True:
             list_a = []

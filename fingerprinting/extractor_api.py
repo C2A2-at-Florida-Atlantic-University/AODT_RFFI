@@ -1,11 +1,10 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from keras.optimizers import RMSprop, Adam
+from keras.optimizers import RMSprop
 from dataset_preparation import ChannelIndSpectrogram
-from deep_learning_models import identity_loss, QuadrupletNet, TripletNet
+from deep_learning_models import identity_loss, QuadrupletNet, TripletNet, RNNTripletNet
 from keras.models import load_model
-from sklearn.model_selection import train_test_split
 import tensorflow as tf
 try:
     import seaborn as sea  # noqa: F401
@@ -15,6 +14,11 @@ import matplotlib.pyplot as plt  # noqa: F401
 
 tf.random.set_seed(42)
 np.random.seed(42)
+try:
+    # Avoid XLA/PTX JIT paths that can fail on some host-driver/container stacks.
+    tf.config.optimizer.set_jit(False)
+except Exception:
+    pass
 
 class ExtractorAPI():
 
@@ -22,13 +26,25 @@ class ExtractorAPI():
         batch_size = model_config['batch_size']
         row = model_config['row']
         loss_type = model_config['loss_type']
-        
+        backbone = model_config.get('backbone', 'rnn')
+        epochs = model_config.get('epochs', 100)
         data = ChannelIndSpectrogram().channel_ind_spectrogram(data, row, enable_ind=model_config['enable_ind'])
         
         if loss_type == 'triplet_loss': 
             alpha = model_config['alpha']
 
-            netObj = TripletNet()
+            if backbone == 'rnn':
+                netObj = RNNTripletNet(
+                    seed=42,
+                    gru_units=model_config.get('rnn_gru_units', 256),
+                    dropout=model_config.get('rnn_dropout', 0.3),
+                    recurrent_dropout=model_config.get('rnn_recurrent_dropout', 0.0),
+                    bidirectional=model_config.get('rnn_bidirectional', True),
+                    num_layers=model_config.get('rnn_num_layers', 2),
+                    embedding_dim=model_config.get('rnn_embedding_dim', 512),
+                )
+            else:
+                netObj = TripletNet()
             feature_extractor = netObj.feature_extractor(data.shape)
             net = netObj.create_net(feature_extractor, alpha=alpha)
         elif loss_type == 'quadruplet_loss': 
@@ -48,8 +64,19 @@ class ExtractorAPI():
             ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=10, min_lr=1e-6, verbose=1),
         ]
         
-        # Split the dasetset into validation and training sets.
-        data_train, data_valid, label_train, label_valid = train_test_split(data, label, test_size=0.2, shuffle=True, random_state=42)
+        # Split dataset into training and validation, preserving class coverage when possible.
+        label_flat = np.asarray(label).reshape(-1)
+        unique, counts = np.unique(label_flat, return_counts=True)
+        can_stratify = (len(unique) >= 2) and np.all(counts >= 2)
+        split_kwargs = dict(test_size=0.2, shuffle=True, random_state=42)
+        if can_stratify:
+            split_kwargs["stratify"] = label_flat
+        data_train, data_valid, label_train, label_valid = train_test_split(data, label, **split_kwargs)
+
+        # Triplet validation requires at least 2 classes in validation split.
+        if len(np.unique(np.asarray(label_valid).reshape(-1))) < 2:
+            print("[WARN] Validation split has <2 classes; reusing training split for validation.")
+            data_valid, label_valid = data_train, label_train
 
         del data, label
         
@@ -69,7 +96,7 @@ class ExtractorAPI():
         history = net.fit(
             train_generator,
             steps_per_epoch=steps_per_epoch,
-            epochs=1000,
+            epochs=epochs,
             validation_data=valid_generator,
             validation_steps=validation_steps,
             verbose=1,
@@ -84,6 +111,33 @@ class ExtractorAPI():
 
     def load(self, model_path, compile=False):
         return load_model(model_path, compile, safe_mode=False)
+
+    def load_feature_extractor(self, model_path, model_config, datashape):
+        """Reconstruct the feature extractor architecture and load saved weights."""
+        backbone = model_config.get('backbone', 'rnn')
+        loss_type = model_config.get('loss_type', 'triplet_loss')
+
+        if loss_type in ('triplet_loss',):
+            if backbone == 'rnn':
+                netObj = RNNTripletNet(
+                    seed=42,
+                    gru_units=model_config.get('rnn_gru_units', 256),
+                    dropout=model_config.get('rnn_dropout', 0.3),
+                    recurrent_dropout=model_config.get('rnn_recurrent_dropout', 0.0),
+                    bidirectional=model_config.get('rnn_bidirectional', True),
+                    num_layers=model_config.get('rnn_num_layers', 2),
+                    embedding_dim=model_config.get('rnn_embedding_dim', 512),
+                )
+            else:
+                netObj = TripletNet()
+        elif loss_type == 'quadruplet_loss':
+            netObj = QuadrupletNet()
+        else:
+            raise ValueError(f"Unknown loss_type: {loss_type}")
+
+        feature_extractor = netObj.feature_extractor(datashape)
+        feature_extractor.load_weights(model_path)
+        return feature_extractor
 
     def run(self, model, data, model_config):
         # Prepare input data for the model (convert to spectrogram images)

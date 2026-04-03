@@ -1,6 +1,15 @@
 import numpy as np
 from pathlib import Path
 from datasets import load_dataset, Sequence, Value
+try:
+    import pyarrow.parquet as pq
+except ImportError:
+    pq = None
+try:
+    from huggingface_hub import hf_hub_download, list_repo_files
+except ImportError:
+    hf_hub_download = None
+    list_repo_files = None
 
 np.random.seed(42)
 
@@ -38,6 +47,130 @@ class DatasetAPI():
         if values is None:
             return None
         return set(int(v) for v in values)
+
+    def _load_hf_dataset_from_parquet(
+        self,
+        repo_id,
+        split='train',
+        revision=None,
+        config_name=None,
+        label_column='rnti',
+        iq_column='iq',
+        rx_ant=0,
+        sym_mode='flatten',
+        batch_filter=None,
+        slot_filter=None,
+        max_samples=None,
+        required_iq_len=None,
+    ):
+        if pq is None or hf_hub_download is None or list_repo_files is None:
+            raise RuntimeError("Parquet loader requires `pyarrow` and `huggingface_hub`.")
+
+        repo_files = list_repo_files(repo_id=repo_id, repo_type="dataset", revision=revision)
+        if config_name:
+            prefix_candidates = [f"{config_name}/{split}-", f"{config_name}/data/{split}-"]
+        else:
+            prefix_candidates = [f"data/{split}-"]
+        parquet_files = sorted(
+            [f for f in repo_files if f.endswith(".parquet") and any(f.startswith(pfx) for pfx in prefix_candidates)]
+        )
+        if not parquet_files:
+            raise RuntimeError(
+                f"No parquet shards found for split='{split}' in dataset '{repo_id}' "
+                f"(config='{config_name}')."
+            )
+
+        frames = []
+        labels = []
+        rssis = []
+        frame_lengths = []
+        skipped_len_mismatch = 0
+        t0 = None
+
+        for shard in parquet_files:
+            local_path = hf_hub_download(repo_id=repo_id, repo_type="dataset", revision=revision, filename=shard)
+
+            schema_names = set(pq.read_schema(local_path).names)
+            meta_cols = [label_column, 'batch', 'slot', 'nSym', 'nSc']
+            if 'rssi' in schema_names:
+                meta_cols.append('rssi')
+            meta = pq.read_table(local_path, columns=meta_cols, use_threads=True).to_pydict()
+            if label_column not in meta:
+                continue
+
+            row_count = len(meta[label_column])
+            selected_idx = []
+            for i in range(row_count):
+                if batch_filter is not None and int(meta['batch'][i]) not in batch_filter:
+                    continue
+                if slot_filter is not None and int(meta['slot'][i]) not in slot_filter:
+                    continue
+                if meta[label_column][i] is None:
+                    continue
+
+                if required_iq_len is not None:
+                    n_sym = int(meta['nSym'][i] or 0)
+                    n_sc = int(meta['nSc'][i] or 0)
+                    if (n_sym <= 0) or (n_sc <= 0) or (n_sym * n_sc != int(required_iq_len)):
+                        skipped_len_mismatch += 1
+                        continue
+
+                selected_idx.append(i)
+
+            if not selected_idx:
+                continue
+
+            iq_data = pq.read_table(local_path, columns=[iq_column], use_threads=True).to_pydict().get(iq_column, [])
+            for i in selected_idx:
+                if max_samples is not None and len(frames) >= max_samples:
+                    break
+
+                iq_value = iq_data[i] if i < len(iq_data) else None
+                if iq_value is None:
+                    continue
+
+                iq = self._hf_iq_to_1d_complex(iq_value, rx_ant=rx_ant, sym_mode=sym_mode)
+                if iq is None:
+                    continue
+
+                try:
+                    label_val = int(meta[label_column][i])
+                except Exception:
+                    continue
+
+                frames.append(iq)
+                labels.append(label_val)
+                if 'rssi' in meta:
+                    rssis.append(float(meta['rssi'][i]) if (meta['rssi'][i] is not None) else np.nan)
+                else:
+                    rssis.append(np.nan)
+                frame_lengths.append(iq.shape[0])
+
+            if max_samples is not None and len(frames) >= max_samples:
+                break
+
+        if not frames:
+            raise RuntimeError(
+                f"No usable records loaded from HF parquet dataset '{repo_id}' (split='{split}'). "
+                "Check filters and required_iq_len."
+            )
+
+        if required_iq_len is not None:
+            print(
+                f"[INFO] Enforced required IQ length={int(required_iq_len)}. "
+                f"Kept={len(frames)} samples, dropped={skipped_len_mismatch} length-mismatched samples."
+            )
+
+        min_len = int(np.min(frame_lengths))
+        if len(set(frame_lengths)) > 1:
+            print(f"[WARN] Variable IQ lengths in HF data. Truncating all frames to min length={min_len}.")
+        frames = np.asarray([x[:min_len] for x in frames], dtype=np.complex64)
+        labels = np.asarray(labels, dtype=int).reshape(-1, 1)
+        if np.isnan(rssis).all():
+            rssis = None
+        else:
+            rssis = np.asarray(rssis, dtype=np.float32).reshape(-1, 1)
+        return frames, labels, rssis
 
     def _load_hf_iq_from_path(self, row):
         iq_path = row.get('iq_path')
@@ -112,6 +245,7 @@ class DatasetAPI():
         repo_id,
         split='train',
         revision=None,
+        config_name=None,
         label_column='rnti',
         iq_column='iq',
         rx_ant=0,
@@ -121,18 +255,41 @@ class DatasetAPI():
         max_samples=None,
         shuffle=False,
         required_iq_len=None,
+        prefer_parquet_loader=False,
     ):
         """
         Load AODT IQ records from a Hugging Face dataset.
         Expected IQ schema is [nRxAnt, nSym, 2*nSc] with interleaved I/Q.
         """
+        if prefer_parquet_loader:
+            try:
+                frames, labels, rssis = self._load_hf_dataset_from_parquet(
+                    repo_id=repo_id,
+                    split=split,
+                    revision=revision,
+                    config_name=config_name,
+                    label_column=label_column,
+                    iq_column=iq_column,
+                    rx_ant=rx_ant,
+                    sym_mode=sym_mode,
+                    batch_filter=batch_filter,
+                    slot_filter=slot_filter,
+                    max_samples=max_samples,
+                    required_iq_len=required_iq_len,
+                )
+                if shuffle:
+                    frames, labels, rssis = self._shuffle_dataset(frames, labels, rssis)
+                return frames, labels, rssis
+            except Exception as e:
+                print(f"[WARN] Parquet loader failed; falling back to datasets streaming: {e}")
+
         self._require_hf_datasets()
 
         batch_filter = self._normalize_filter_values(batch_filter)
         slot_filter = self._normalize_filter_values(slot_filter)
 
         # Streaming avoids loading the full table into memory.
-        ds = load_dataset(repo_id, split=split, revision=revision, streaming=True)
+        ds = load_dataset(repo_id, name=config_name, split=split, revision=revision, streaming=True)
         # Some rows have variable IQ width; cast to variable-length nested
         # sequences to avoid Array3D reshape failures at iteration time.
         if hasattr(ds, "features") and iq_column in ds.features:
@@ -146,7 +303,10 @@ class DatasetAPI():
         frame_lengths = []
         skipped_len_mismatch = 0
 
+        scanned_rows = 0
+        t0 = np.datetime64('now')
         for row in ds:
+            scanned_rows += 1
             if batch_filter is not None and int(row.get('batch', -1)) not in batch_filter:
                 continue
             if slot_filter is not None and int(row.get('slot', -1)) not in slot_filter:
@@ -180,6 +340,12 @@ class DatasetAPI():
 
             if max_samples is not None and len(frames) >= max_samples:
                 break
+            if scanned_rows % 500 == 0:
+                elapsed_s = (np.datetime64('now') - t0) / np.timedelta64(1, 's')
+                print(
+                    f"[INFO] HF load progress split='{split}': "
+                    f"scanned={scanned_rows}, kept={len(frames)}, elapsed={float(elapsed_s):.1f}s"
+                )
 
         if not frames:
             raise RuntimeError(
@@ -218,6 +384,7 @@ class DatasetAPI():
             raise ValueError("Missing `hf_repo_id` in data_config for AODT HF dataset.")
 
         revision = data_config.get('hf_revision', None)
+        config_name = data_config.get('hf_config_name', None)
         train_split = data_config.get('hf_train_split', 'train')
         test_split = data_config.get('hf_test_split', train_split)
         label_column = data_config.get('hf_label_column', 'rnti')
@@ -230,6 +397,7 @@ class DatasetAPI():
             repo_id=repo_id,
             split=train_split,
             revision=revision,
+            config_name=config_name,
             label_column=label_column,
             iq_column=iq_column,
             rx_ant=rx_ant,
@@ -261,6 +429,7 @@ class DatasetAPI():
                 repo_id=repo_id,
                 split=test_split,
                 revision=revision,
+                config_name=config_name,
                 label_column=label_column,
                 iq_column=iq_column,
                 rx_ant=rx_ant,

@@ -145,6 +145,12 @@ class ChannelIndSpectrogram():
             data_spectrograms[i,:,:,0] = spec
 
         if remove_subcarriers:
+            freq_bins = data_spectrograms.shape[1]
+            if freq_bins != 80:
+                raise ValueError(
+                    f"Guard subcarrier removal assumes row=80 (got freq_bins={freq_bins}). "
+                    "Set remove_subcarriers=False or update guard indices for this row size."
+                )
             guards = list(range(0, 14)) + [40] + list(range(67, 80))
             data_spectrograms = np.delete(data_spectrograms, guards, axis=1)
 

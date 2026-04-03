@@ -137,7 +137,7 @@ class EvaluationAPI():
 
         return accuracy, labels_epoch_2, labels_epoch_2_predicted
     
-    def evaluate_open_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, fig_path=None):
+    def evaluate_open_set_knn(self, model, data_epoch_1, labels_epoch_1, data_epoch_2, labels_epoch_2, model_config, knn_k=10, fig_path=None):
         # Here, we also expect two epochs. But we expect that the number set of devices in epoch #1 will be smaller compared to
         # the set of devices in epoch #2.
         epoch_1_device_ids = set(labels_epoch_1.flatten())
@@ -153,7 +153,7 @@ class EvaluationAPI():
         fps_epoch_1 = self.extractor_api.run(model, data_epoch_1, model_config)
 
         # Perform the enrollment: fit a KNN classifier based on produced fingerprints
-        classifier = KNeighborsClassifier(n_neighbors=10, metric='euclidean')
+        classifier = KNeighborsClassifier(n_neighbors=knn_k, metric='euclidean')
         classifier.fit(fps_epoch_1, np.ravel(labels_epoch_1))
 
         # Produce fingerprints for the epoch #2
